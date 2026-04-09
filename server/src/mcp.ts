@@ -45,20 +45,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: 'complete_design_request',
       description:
         'Report the result of a design request back to the browser. ' +
-        'Call this after editing source files. ' +
+        'Call this after handling the request. ' +
         'status must be "completed" or "failed". ' +
-        'On completed: provide summary (what changed) and changedFiles (file paths). ' +
+        'For suggest mode: provide content (advice text). ' +
+        'For develop mode: provide summary (what changed) and changedFiles (file paths). ' +
         'On failed: provide error (reason).',
       inputSchema: {
         type: 'object' as const,
         properties: {
           id: { type: 'string', description: 'Request ID returned by watch_design_requests' },
           status: { type: 'string', enum: ['completed', 'failed'] },
-          summary: { type: 'string', description: 'Human-readable description of the change' },
+          content: { type: 'string', description: 'Text content for suggest mode (returned as advice text to the user)' },
+          summary: { type: 'string', description: 'Human-readable description of the change (develop mode)' },
           changedFiles: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Relative paths of files modified',
+            description: 'Relative paths of files modified (develop mode)',
           },
           error: { type: 'string', description: 'Error message when status is failed' },
         },
@@ -96,18 +98,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === 'complete_design_request') {
-    const { id, status, summary, changedFiles, error } = args as {
+    const { id, status, summary, changedFiles, error, content } = args as {
       id: string
       status: 'completed' | 'failed'
       summary?: string
       changedFiles?: string[]
       error?: string
+      content?: string
     }
     try {
       const res = await fetch(`${SERVER_URL}/api/complete/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, summary, changedFiles, error }),
+        body: JSON.stringify({ status, summary, changedFiles, error, content }),
       })
       const body = await res.json() as { ok: boolean; error?: string }
       if (!res.ok) {
