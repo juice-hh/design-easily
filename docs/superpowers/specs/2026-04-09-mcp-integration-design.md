@@ -106,12 +106,19 @@ A timer runs every 60 seconds. Any request in `inFlight` with `claimedAt` older 
 - Removed from `inFlight`
 - Push `{ type: 'design:failed', id, error: 'timed out' }` to browser
 
-### Late Completion (failed → completed override)
+### Late Completion — Idempotency & State Override Rules
 
-If `POST /api/complete/:id` arrives after stale cleanup has already marked a request `failed`:
-- Override: `request.status = 'completed'`, write all result fields
-- Push `{ type: 'design:done', id, summary, changedFiles }` to browser
-- This overrides any previously shown failure UI on the browser side
+`POST /api/complete/:id` follows these rules, in order:
+
+| Current status | Incoming status | Action |
+|----------------|-----------------|--------|
+| `failed` (auto-timeout) | `completed` | **Override allowed**: write result, push `design:done` |
+| `failed` (auto-timeout) | `failed` | No-op: already failed, ignore |
+| `completed` | `failed` | **Override rejected**: completed is terminal, ignore |
+| `completed` | `completed` | No-op: idempotent, ignore |
+| `claimed` | `completed` / `failed` | Normal path, apply |
+
+Rule summary: `failed(timeout) → completed` is the only allowed override. `completed` is a terminal state and cannot be overwritten.
 
 ### WebSocket Event State Machine
 
@@ -167,11 +174,26 @@ server/src/
   tsconfig.build.json   MOD  — add mcp.ts as additional entry point (outDir: dist/)
 
 .claude/
-  settings.local.json   NEW  — gitignored, machine-specific MCP config
-  settings.json         MOD  — shared config without cwd (or use template)
+  settings.local.json         NEW  — gitignored, machine-specific MCP config
+  settings.local.example.json NEW  — committed template with placeholder cwd
+  settings.json               MOD  — shared config without mcpServers (moved to local)
 
 .gitignore             MOD  — add .claude/settings.local.json
 ```
+
+**settings.local.example.json** (committed as template):
+```json
+{
+  "mcpServers": {
+    "design-easily": {
+      "command": "node",
+      "args": ["server/dist/mcp.js"],
+      "cwd": "<absolute-path-to-project-root>"
+    }
+  }
+}
+```
+Developers copy this to `settings.local.json` and fill in their own `cwd`.
 
 **settings.json approach**: machine-specific `cwd` must NOT be committed. Two options:
 - Use `.claude/settings.local.json` (gitignored) for `mcpServers`; Claude Code merges local + project settings
@@ -183,7 +205,7 @@ Add `.claude/settings.local.json` (or `.claude/settings.json` if that file is gi
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/next?timeout=30000` | Long-poll, atomic claim, returns `DesignRequest \| null` |
+| `GET /api/next?timeout=30000` | Long-poll, atomic claim, returns `{ ok: true, request: DesignRequest } \| { ok: true, request: null }` |
 | `POST /api/complete/:id` | Claude Code writes back result; id in path only, not body |
 | `GET /api/requests/:id` | Single request status lookup for reconnection |
 
