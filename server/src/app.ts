@@ -18,7 +18,7 @@ import { queue, type ElementContext } from './queue.js'
 type ClientMessage =
   | { type: 'vscode:open'; file: string; line: number }
   | { type: 'ai:chat'; requestId: string; messages: ChatMessage[]; model?: string }
-  | { type: 'design:request'; element: ElementContext; userMessage: string }
+  | { type: 'design:request'; element: ElementContext; userMessage: string; action?: 'suggest' | 'develop' }
   | { type: 'ping' }
 
 type ServerMessage =
@@ -27,6 +27,9 @@ type ServerMessage =
   | { type: 'ai:done'; requestId: string }
   | { type: 'ai:error'; error: string; requestId: string }
   | { type: 'design:queued'; id: string }
+  | { type: 'design:processing'; id: string }
+  | { type: 'design:done'; id: string; action?: 'suggest' | 'develop'; content?: string; summary?: string; changedFiles?: string[] }
+  | { type: 'design:failed'; id: string; error: string }
   | { type: 'pong' }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
@@ -71,11 +74,12 @@ export default function createApp(): AppInstance {
   // POST /api/complete/:id — Claude Code writes back result
   app.post('/api/complete/:id', (req, res) => {
     const { id } = req.params
-    const { status, summary, changedFiles, error } = req.body as {
+    const { status, summary, changedFiles, error, content } = req.body as {
       status?: 'completed' | 'failed'
       summary?: string
       changedFiles?: string[]
       error?: string
+      content?: string
     }
 
     if (!status) {
@@ -93,11 +97,18 @@ export default function createApp(): AppInstance {
       return
     }
 
-    const changed = queue.complete(id!, { status, summary, changedFiles, error })
+    const changed = queue.complete(id!, { status, summary, changedFiles, error, content })
 
     if (changed) {
       const event = status === 'completed'
-        ? { type: 'design:done', id, summary: summary ?? '', changedFiles: changedFiles ?? [] }
+        ? {
+            type: 'design:done',
+            id,
+            action: existing.action,
+            content: existing.content,
+            summary: existing.summary ?? '',
+            changedFiles: existing.changedFiles ?? [],
+          }
         : { type: 'design:failed', id, error: error ?? '' }
 
       wss.clients.forEach((client) => {
@@ -117,8 +128,8 @@ export default function createApp(): AppInstance {
       res.status(404).json({ ok: false, error: 'not found' })
       return
     }
-    const { id, status, summary, changedFiles, error, createdAt, claimedAt, completedAt } = request
-    res.json({ id, status, summary, changedFiles, error, createdAt, claimedAt, completedAt })
+    const { id, action, status, summary, changedFiles, content, error, createdAt, claimedAt, completedAt } = request
+    res.json({ id, action, status, summary, changedFiles, content, error, createdAt, claimedAt, completedAt })
   })
 
   const httpServer = createServer(app)
@@ -157,9 +168,9 @@ export default function createApp(): AppInstance {
         }
 
         case 'design:request': {
-          const { element, userMessage } = msg
+          const { element, userMessage, action } = msg
           if (!element || !userMessage) return
-          const request = queue.enqueue(element, userMessage)
+          const request = queue.enqueue(element, userMessage, action)
           send(ws, { type: 'design:queued', id: request.id })
           break
         }

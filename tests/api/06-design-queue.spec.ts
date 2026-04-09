@@ -69,6 +69,17 @@ describe('06 — Design Queue', () => {
       ws.close()
     })
 
+    it('preserves action field in dequeued request', async () => {
+      const ws = await wsConnect(server.wsUrl)
+      wsSend(ws, { type: 'design:request', element: ELEMENT, userMessage: 'test', action: 'suggest' })
+      await waitForMessage(ws) // design:queued
+
+      const res = await fetch(`${server.baseUrl}/api/next?timeout=1000`)
+      const body = await res.json() as { ok: boolean; request: Record<string, unknown> }
+      expect(body.request?.action).toBe('suggest')
+      ws.close()
+    })
+
     it('pushes design:processing to browser when request is claimed', async () => {
       const ws = await wsConnect(server.wsUrl)
       wsSend(ws, { type: 'design:request', element: ELEMENT, userMessage: 'fix padding' })
@@ -152,6 +163,30 @@ describe('06 — Design Queue', () => {
       expect(done?.['changedFiles']).toEqual(['B.tsx'])
       ws.close()
     })
+
+    it('pushes design:done with action and content for suggest mode', async () => {
+      const ws = await wsConnect(server.wsUrl)
+      wsSend(ws, { type: 'design:request', element: ELEMENT, userMessage: 'test', action: 'suggest' })
+      const queued = await waitForMessage(ws) as Record<string, unknown>
+      const id = queued['id'] as string
+
+      await fetch(`${server.baseUrl}/api/next?timeout=1000`)
+
+      const messages: Record<string, unknown>[] = []
+      ws.on('message', (raw) => messages.push(JSON.parse(raw.toString())))
+
+      await fetch(`${server.baseUrl}/api/complete/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed', content: 'Use border-radius: 8px' }),
+      })
+
+      await new Promise((r) => setTimeout(r, 100))
+      const done = messages.find((m) => m['type'] === 'design:done')
+      expect(done?.['action']).toBe('suggest')
+      expect(done?.['content']).toBe('Use border-radius: 8px')
+      ws.close()
+    })
   })
 
   describe('GET /api/requests/:id', () => {
@@ -173,6 +208,26 @@ describe('06 — Design Queue', () => {
     it('returns 404 for unknown id', async () => {
       const res = await fetch(`${server.baseUrl}/api/requests/nonexistent`)
       expect(res.status).toBe(404)
+    })
+
+    it('returns action and content after suggest-mode completion', async () => {
+      const ws = await wsConnect(server.wsUrl)
+      wsSend(ws, { type: 'design:request', element: ELEMENT, userMessage: 'test', action: 'suggest' })
+      const queued = await waitForMessage(ws) as Record<string, unknown>
+      const id = queued['id'] as string
+      ws.close()
+
+      await fetch(`${server.baseUrl}/api/next?timeout=1000`)
+      await fetch(`${server.baseUrl}/api/complete/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed', content: 'Add padding: 16px' }),
+      })
+
+      const res = await fetch(`${server.baseUrl}/api/requests/${id}`)
+      const body = await res.json() as Record<string, unknown>
+      expect(body['action']).toBe('suggest')
+      expect(body['content']).toBe('Add padding: 16px')
     })
   })
 })
