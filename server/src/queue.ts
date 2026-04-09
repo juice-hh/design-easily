@@ -22,12 +22,14 @@ export interface DesignRequest {
   id: string
   element: ElementContext
   userMessage: string
+  action: 'suggest' | 'develop'
   status: RequestStatus
   createdAt: number
   claimedAt?: number
   completedAt?: number
   changedFiles?: string[]
   summary?: string
+  content?: string
   error?: string
 }
 
@@ -35,6 +37,7 @@ export interface CompletePayload {
   status: 'completed' | 'failed'
   summary?: string
   changedFiles?: string[]
+  content?: string
   error?: string
 }
 
@@ -54,12 +57,13 @@ class DesignQueue extends EventEmitter {
     if (this.cleanupTimer.unref) this.cleanupTimer.unref()
   }
 
-  enqueue(element: ElementContext, userMessage: string): DesignRequest {
+  enqueue(element: ElementContext, userMessage: string, action: 'suggest' | 'develop' = 'develop'): DesignRequest {
     const id = randomUUID()
     const request: DesignRequest = {
       id,
       element,
       userMessage,
+      action,
       status: 'pending',
       createdAt: Date.now(),
     }
@@ -113,6 +117,7 @@ class DesignQueue extends EventEmitter {
     if (payload.status === 'completed') {
       request.summary = payload.summary
       request.changedFiles = payload.changedFiles
+      request.content = payload.content
     } else {
       request.error = payload.error
     }

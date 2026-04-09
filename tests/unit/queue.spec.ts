@@ -13,6 +13,15 @@ describe('queue — enqueue', () => {
     expect(req.userMessage).toBe('make it red')
     expect(req.element).toEqual(element)
   })
+
+  it('stores action field, defaults to develop', () => {
+    const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
+    const req1 = queue.enqueue(element, 'test')
+    expect(req1.action).toBe('develop')
+
+    const req2 = queue.enqueue(element, 'test', 'suggest')
+    expect(req2.action).toBe('suggest')
+  })
 })
 
 describe('queue — dequeue', () => {
@@ -54,6 +63,19 @@ describe('queue — complete', () => {
     expect(changed).toBe(true)
     expect(queue.getById(req.id)?.status).toBe('completed')
     expect(queue.getById(req.id)?.summary).toBe('Increased padding to 16px')
+  })
+
+  it('stores content for suggest mode completion', async () => {
+    const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
+    queue.enqueue(element, 'test', 'suggest')
+    await queue.dequeue(1000)
+    const req = queue.getAll()[0]!
+    queue.complete(req.id, {
+      status: 'completed',
+      content: 'Add border-radius: 8px to the button',
+    })
+    expect(queue.getById(req.id)?.content).toBe('Add border-radius: 8px to the button')
+    expect(queue.getById(req.id)?.status).toBe('completed')
   })
 
   it('marks claimed request as failed and stores error', async () => {
