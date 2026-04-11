@@ -1,0 +1,329 @@
+/**
+ * Ruler mode — shows element dimensions and distances to nearby elements on hover.
+ * Displays px labels on cyan overlay lines, Figma-style.
+ */
+
+const RULER_ID = 'de-ruler-canvas'
+const RULER_STYLES_ID = 'de-ruler-styles'
+
+function ensureStyles(): void {
+  if (document.getElementById(RULER_STYLES_ID)) return
+  const style = document.createElement('style')
+  style.id = RULER_STYLES_ID
+  style.textContent = `
+    #de-ruler-canvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2147483642;
+      overflow: hidden;
+    }
+    .de-ruler-line {
+      position: absolute;
+      background: rgba(255, 59, 48, 0.6);
+    }
+    .de-ruler-line.anchor {
+      background: rgba(255, 149, 0, 0.7);
+    }
+    .de-ruler-label {
+      position: absolute;
+      background: rgba(255, 59, 48, 0.85);
+      color: white;
+      font-size: 10px;
+      font-family: "SF Mono", "Menlo", monospace;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+    .de-ruler-target {
+      position: absolute;
+      border: 1.5px dashed rgba(255, 149, 0, 0.9);
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+    .de-size-label {
+      position: absolute;
+      background: rgba(255, 149, 0, 0.9);
+      color: white;
+      font-size: 10px;
+      font-family: "SF Mono", "Menlo", monospace;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    .de-ruler-anchor-label {
+      position: absolute;
+      background: rgba(0, 122, 255, 0.85);
+      color: white;
+      font-size: 9px;
+      font-family: "SF Mono", "Menlo", monospace;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+    .de-ruler-target.anchored {
+      border-color: rgba(0, 122, 255, 0.9);
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function getCanvas(): HTMLElement {
+  let el = document.getElementById(RULER_ID)
+  if (!el) {
+    el = document.createElement('div')
+    el.id = RULER_ID
+    el.setAttribute('data-design-easily', 'ruler')
+    document.body.appendChild(el)
+  }
+  return el
+}
+
+function clearCanvas(): void {
+  const el = document.getElementById(RULER_ID)
+  if (el) el.innerHTML = ''
+}
+
+function createLine(
+  canvas: HTMLElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  label: string,
+  extraClass = '',
+): void {
+  const line = document.createElement('div')
+  line.className = extraClass ? `de-ruler-line ${extraClass}` : 'de-ruler-line'
+  Object.assign(line.style, {
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${w}px`,
+    height: `${h}px`,
+  })
+  canvas.appendChild(line)
+
+  const lbl = document.createElement('div')
+  lbl.className = 'de-ruler-label'
+  lbl.textContent = label
+  Object.assign(lbl.style, {
+    left: `${x + w / 2 - 15}px`,
+    top: `${y + h / 2 - 8}px`,
+  })
+  canvas.appendChild(lbl)
+}
+
+function drawRuler(target: Element, anchorEl: Element | null = null): void {
+  const canvas = getCanvas()
+  clearCanvas()
+
+  const tr = target.getBoundingClientRect()
+
+  // Draw target outline
+  const outline = document.createElement('div')
+  outline.className = 'de-ruler-target'
+  Object.assign(outline.style, {
+    left: `${tr.left}px`,
+    top: `${tr.top}px`,
+    width: `${tr.width}px`,
+    height: `${tr.height}px`,
+  })
+  canvas.appendChild(outline)
+
+  // Size label
+  const sizeLabel = document.createElement('div')
+  sizeLabel.className = 'de-size-label'
+  sizeLabel.textContent = `${Math.round(tr.width)} × ${Math.round(tr.height)}`
+  Object.assign(sizeLabel.style, {
+    left: `${tr.left}px`,
+    top: `${tr.top - 20}px`,
+  })
+  canvas.appendChild(sizeLabel)
+
+  // If anchor element set and different from target, draw distance between them
+  if (anchorEl && anchorEl !== target) {
+    const ar = anchorEl.getBoundingClientRect()
+
+    // Draw anchor outline (blue)
+    const anchorOutline = document.createElement('div')
+    anchorOutline.className = 'de-ruler-target anchored'
+    Object.assign(anchorOutline.style, {
+      left: `${ar.left}px`,
+      top: `${ar.top}px`,
+      width: `${ar.width}px`,
+      height: `${ar.height}px`,
+    })
+    canvas.appendChild(anchorOutline)
+
+    // Anchor label
+    const anchorLabel = document.createElement('div')
+    anchorLabel.className = 'de-ruler-anchor-label'
+    anchorLabel.textContent = '已锚定'
+    Object.assign(anchorLabel.style, {
+      left: `${ar.left}px`,
+      top: `${ar.top - 18}px`,
+    })
+    canvas.appendChild(anchorLabel)
+
+    // Horizontal gap
+    const hGap = Math.max(ar.left - tr.right, tr.left - ar.right)
+    if (hGap > 0) {
+      const fromX = ar.left > tr.right ? tr.right : ar.right
+      const midY = Math.min(tr.top, ar.top) + Math.abs(tr.top - ar.top) / 2
+      createLine(canvas, fromX, midY, hGap, 1, `${Math.round(hGap)}px`, 'anchor')
+    }
+
+    // Vertical gap
+    const vGap = Math.max(ar.top - tr.bottom, tr.top - ar.bottom)
+    if (vGap > 0) {
+      const fromY = ar.top > tr.bottom ? tr.bottom : ar.bottom
+      const midX = Math.min(tr.left, ar.left) + Math.abs(tr.left - ar.left) / 2
+      createLine(canvas, midX, fromY, 1, vGap, `${Math.round(vGap)}px`, 'anchor')
+    }
+
+    return // Skip sibling/padding measurements when anchor mode active
+  }
+
+  // Find neighboring elements to measure distances
+  const parent = target.parentElement
+  if (!parent) return
+
+  const siblings = Array.from(parent.children).filter(
+    (el) => el !== target && !el.getAttribute('data-design-easily'),
+  )
+
+  for (const sibling of siblings.slice(0, 4)) {
+    const sr = sibling.getBoundingClientRect()
+
+    // Only measure if elements are nearby (within 300px)
+    const hDist = Math.min(
+      Math.abs(tr.right - sr.left),
+      Math.abs(sr.right - tr.left),
+    )
+    const vDist = Math.min(
+      Math.abs(tr.bottom - sr.top),
+      Math.abs(sr.bottom - tr.top),
+    )
+
+    if (hDist < 300 && sr.right > tr.left && sr.left < tr.right) {
+      // Vertical spacing (elements overlap horizontally)
+      if (sr.top > tr.bottom) {
+        const gap = sr.top - tr.bottom
+        if (gap > 0 && gap < 200) {
+          createLine(
+            canvas,
+            tr.left + tr.width / 2,
+            tr.bottom,
+            1,
+            gap,
+            `${Math.round(gap)}px`,
+          )
+        }
+      } else if (sr.bottom < tr.top) {
+        const gap = tr.top - sr.bottom
+        if (gap > 0 && gap < 200) {
+          createLine(
+            canvas,
+            tr.left + tr.width / 2,
+            sr.bottom,
+            1,
+            gap,
+            `${Math.round(gap)}px`,
+          )
+        }
+      }
+    }
+
+    if (vDist < 300 && sr.bottom > tr.top && sr.top < tr.bottom) {
+      // Horizontal spacing (elements overlap vertically)
+      if (sr.left > tr.right) {
+        const gap = sr.left - tr.right
+        if (gap > 0 && gap < 200) {
+          createLine(
+            canvas,
+            tr.right,
+            tr.top + tr.height / 2,
+            gap,
+            1,
+            `${Math.round(gap)}px`,
+          )
+        }
+      } else if (sr.right < tr.left) {
+        const gap = tr.left - sr.right
+        if (gap > 0 && gap < 200) {
+          createLine(
+            canvas,
+            sr.right,
+            tr.top + tr.height / 2,
+            gap,
+            1,
+            `${Math.round(gap)}px`,
+          )
+        }
+      }
+    }
+  }
+
+  // Draw padding indicators using computed styles
+  const computed = window.getComputedStyle(target)
+  const pt = parseInt(computed.paddingTop)
+  const pr = parseInt(computed.paddingRight)
+  const pb = parseInt(computed.paddingBottom)
+  const pl = parseInt(computed.paddingLeft)
+
+  if (pt > 0) createLine(canvas, tr.left + tr.width / 2, tr.top, 1, pt, `${pt}`)
+  if (pb > 0) createLine(canvas, tr.left + tr.width / 2, tr.bottom - pb, 1, pb, `${pb}`)
+  if (pl > 0) createLine(canvas, tr.left, tr.top + tr.height / 2, pl, 1, `${pl}`)
+  if (pr > 0) createLine(canvas, tr.right - pr, tr.top + tr.height / 2, pr, 1, `${pr}`)
+}
+
+// ─── Ruler mode controller ────────────────────────────────────────────────────
+
+export class RulerMode {
+  private anchorEl: Element | null = null
+
+  constructor() {
+    ensureStyles()
+  }
+
+  enable(): void {
+    const canvas = getCanvas()
+    canvas.style.display = 'block'
+    document.addEventListener('mouseover', this.onHover, true)
+    document.addEventListener('click', this.onClick, true)
+    document.body.style.cursor = 'crosshair'
+  }
+
+  disable(): void {
+    document.removeEventListener('mouseover', this.onHover, true)
+    document.removeEventListener('click', this.onClick, true)
+    document.body.style.cursor = ''
+    this.anchorEl = null
+    clearCanvas()
+    const canvas = document.getElementById(RULER_ID)
+    if (canvas) canvas.style.display = 'none'
+  }
+
+  private onClick = (e: MouseEvent): void => {
+    const target = e.target as Element
+    if (!target || target.getAttribute('data-design-easily')) return
+    e.preventDefault()
+    e.stopPropagation()
+    // Toggle anchor: click same element to deselect
+    this.anchorEl = this.anchorEl === target ? null : target
+    drawRuler(target, this.anchorEl)
+  }
+
+  private onHover = (e: MouseEvent): void => {
+    const target = e.target as Element
+    if (!target || target.getAttribute('data-design-easily')) return
+    drawRuler(target, this.anchorEl)
+  }
+
+  destroy(): void {
+    this.disable()
+    document.getElementById(RULER_ID)?.remove()
+    document.getElementById(RULER_STYLES_ID)?.remove()
+  }
+}
