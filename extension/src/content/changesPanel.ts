@@ -117,6 +117,7 @@ const PANEL_STYLES = `
   .item-type.style { background: rgba(0,122,255,0.1); color: #007AFF; }
   .item-type.text { background: rgba(52,199,89,0.1); color: #1d8a3a; }
   .item-type.comment { background: rgba(255,149,0,0.1); color: #b86a00; }
+  .item-type.layout { background: rgba(88,86,214,0.1); color: #5856D6; }
   .item-body {
     flex: 1;
     min-width: 0;
@@ -306,7 +307,7 @@ export class ChangesPanel {
         : `"${c.oldValue}" → "${c.newValue}"`
       return `
         <div class="item" data-id="${c.id}" data-kind="change">
-          <span class="item-type ${c.type}">${c.type === 'style' ? '样式' : '文本'}</span>
+          <span class="item-type ${c.type}">${c.type === 'style' ? '样式' : c.type === 'layout' ? '布局' : '文本'}</span>
           <div class="item-body">
             <div class="item-target">${target}</div>
             <div class="item-detail">${detail}</div>
