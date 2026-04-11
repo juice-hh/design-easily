@@ -294,34 +294,36 @@ const PANEL_STYLES = `
   }
   .chat-buttons {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    gap: 5px;
     flex-shrink: 0;
   }
   .btn-suggest {
-    padding: 5px 10px;
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
     background: rgba(0,122,255,0.1);
     color: #007AFF;
     border: none;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: inherit;
-    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     transition: opacity 0.15s;
   }
   .btn-develop {
-    padding: 5px 10px;
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
     background: #007AFF;
     color: white;
     border: none;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: inherit;
-    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     transition: opacity 0.15s;
   }
   .btn-suggest:hover, .btn-develop:hover { opacity: 0.8; }
@@ -462,8 +464,12 @@ export class InspectPanel {
           <div class="chat-input-row">
             <textarea class="chat-input" placeholder="描述你想改什么..." rows="1"></textarea>
             <div class="chat-buttons">
-              <button class="btn-suggest" data-action="suggest">💡 建议</button>
-              <button class="btn-develop" data-action="develop">⚙️ 开发</button>
+              <button class="btn-suggest" data-action="suggest" title="建议">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1a5 5 0 00-2.83 9.13L6 12h4l.83-1.87A5 5 0 008 1z"/><line x1="6" y1="14" x2="10" y2="14"/><line x1="6.5" y1="16" x2="9.5" y2="16"/></svg>
+              </button>
+              <button class="btn-develop" data-action="develop" title="开发">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5 1 8 4 11"/><polyline points="12 5 15 8 12 11"/><line x1="9" y1="3" x2="7" y2="13"/></svg>
+              </button>
             </div>
           </div>
         </div>
