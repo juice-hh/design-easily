@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Design Easily — 全功能预览</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  background: #f5f5f7;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ──── 模拟页面内容 ──── */
+.fake-page {
+  padding: 48px 64px;
+  min-height: 100vh;
+  position: relative;
+}
+.fake-hero {
+  max-width: 600px;
+  margin: 0 auto 40px;
+  text-align: center;
+}
+.fake-hero h1 { font-size: 36px; font-weight: 700; color: #1c1c1e; margin-bottom: 12px; }
+.fake-hero p { font-size: 16px; color: rgba(0,0,0,0.5); line-height: 1.6; }
+.fake-btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 24px; }
+.fake-btn {
+  padding: 12px 28px; border-radius: 12px; font-size: 15px; font-weight: 600;
+  cursor: default; border: none;
+}
+.fake-btn.primary { background: #007AFF; color: white; }
+.fake-btn.secondary { background: rgba(0,0,0,0.08); color: #1c1c1e; }
+
+.fake-cards { display: flex; gap: 16px; max-width: 700px; margin: 0 auto; }
+.fake-card {
+  flex: 1; background: white; border-radius: 16px; padding: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+.fake-card h3 { font-size: 14px; font-weight: 600; color: #1c1c1e; margin-bottom: 8px; }
+.fake-card p { font-size: 12px; color: rgba(0,0,0,0.45); line-height: 1.5; }
+
+/* ──── 选中高亮框 ──── */
+.highlight-box {
+  position: absolute;
+  border: 2px solid #007AFF;
+  border-radius: 6px;
+  background: rgba(0,122,255,0.06);
+  pointer-events: none;
+  transition: all 0.2s ease;
+  display: none;
+}
+
+/* ──── 工具栏 ──── */
+.toolbar {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.7);
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.14);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tb-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px; border: none;
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  cursor: pointer; background: transparent; color: rgba(0,0,0,0.5);
+  transition: all 0.15s;
+}
+.tb-btn:hover { background: rgba(0,0,0,0.06); color: #1c1c1e; }
+.tb-btn.active { background: rgba(0,122,255,0.12); color: #007AFF; }
+.tb-dot { width: 7px; height: 7px; border-radius: 50%; background: #34C759; flex-shrink: 0; }
+.tb-sep { width: 1px; height: 18px; background: rgba(0,0,0,0.1); margin: 0 2px; }
+
+/* ──── 右侧审查面板 ──── */
+.inspect-panel {
+  position: fixed;
+  top: 64px; right: 16px;
+  z-index: 99;
+  width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.ip-wrap {
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.6);
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.16);
+  overflow: hidden;
+}
+.ip-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.07);
+}
+.ip-comp { font-size: 14px; font-weight: 600; color: #1c1c1e; display: flex; align-items: center; gap: 6px; }
+.ip-badge {
+  font-size: 9px; font-weight: 500; padding: 1px 6px; border-radius: 4px;
+  background: rgba(0,122,255,0.1); color: #007AFF;
+}
+.ip-breadcrumb { font-size: 11px; color: rgba(0,0,0,0.4); margin-top: 3px; }
+.ip-body { padding: 0 0 8px; overflow-y: auto; max-height: 220px; }
+.ip-source {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border-top: 1px solid rgba(0,0,0,0.06); border-bottom: 1px solid rgba(0,0,0,0.06);
+  cursor: pointer;
+}
+.ip-source:hover { background: rgba(0,122,255,0.04); }
+.ip-file { font-size: 11px; font-family: "SF Mono","Menlo",monospace; color: #007AFF; }
+.ip-line { font-size: 10px; color: rgba(0,0,0,0.35); }
+.ip-section { padding: 8px 14px 4px; }
+.ip-section-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(0,0,0,0.3); margin-bottom: 5px; }
+.ip-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+.ip-key { color: rgba(0,0,0,0.4); }
+.ip-val { font-family: "SF Mono","Menlo",monospace; color: #1c1c1e; font-size: 10px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* chat area */
+.ip-chat { border-top: 1px solid rgba(0,0,0,0.07); padding: 10px 10px 10px; }
+.ip-msgs { max-height: 140px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.msg { padding: 7px 9px; border-radius: 10px; font-size: 11px; line-height: 1.4; max-width: 88%; }
+.msg.user { background: #007AFF; color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
+.msg.assistant { background: rgba(0,0,0,0.06); color: #1c1c1e; align-self: flex-start; border-bottom-left-radius: 3px; font-family: "SF Mono","Menlo",monospace; white-space: pre-wrap; word-break: break-word; }
+.msg.loading { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.35); align-self: flex-start; font-size: 11px; font-style: italic; }
+.ip-input-row { display: flex; gap: 6px; align-items: flex-end; }
+.ip-input {
+  flex: 1; border: 1px solid rgba(0,0,0,0.12); border-radius: 10px;
+  padding: 7px 9px; font-size: 11px; font-family: inherit; resize: none;
+  outline: none; background: rgba(255,255,255,0.7); line-height: 1.4; color: #1c1c1e;
+}
+.ip-input:focus { border-color: #007AFF; }
+.ip-btns { display: flex; flex-direction: row; gap: 5px; }
+.btn-suggest {
+  width: 32px; height: 32px; border-radius: 8px; background: rgba(0,122,255,0.1); color: #007AFF;
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: opacity 0.15s;
+}
+.btn-develop {
+  width: 32px; height: 32px; border-radius: 8px; background: #007AFF; color: white;
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: opacity 0.15s;
+}
+.btn-suggest:hover, .btn-develop:hover { opacity: 0.8; }
+.btn-suggest:disabled, .btn-develop:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ──── 底部变更面板 ──── */
+.changes-panel {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 98;
+  width: min(760px, calc(100vw - 32px));
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.cp-wrap {
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.6);
+  border-radius: 16px;
+  box-shadow: 0 -4px 32px rgba(0,0,0,0.12), 0 8px 32px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+.cp-bar {
+  display: flex; align-items: center; padding: 9px 13px;
+  border-bottom: 1px solid rgba(0,0,0,0.07); gap: 7px;
+}
+.cp-title { font-size: 12px; font-weight: 600; color: #1c1c1e; flex: 1; }
+.cp-count {
+  background: rgba(0,122,255,0.12); color: #007AFF;
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px;
+}
+.cp-tabs { display: flex; gap: 2px; }
+.cp-tab {
+  font-size: 10px; font-weight: 500; padding: 2px 9px; border-radius: 5px;
+  border: none; background: transparent; color: rgba(0,0,0,0.45);
+  cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 3px;
+}
+.cp-tab.active { background: rgba(0,122,255,0.1); color: #007AFF; }
+.cp-pending {
+  background: #007AFF; color: white; font-size: 8px; font-weight: 700;
+  padding: 1px 4px; border-radius: 8px; line-height: 1.4;
+}
+.cp-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.cp-btn { font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 6px; border: none; cursor: pointer; font-family: inherit; background: transparent; color: rgba(0,0,0,0.35); }
+.cp-chevron { font-size: 11px; color: rgba(0,0,0,0.35); }
+
+.cp-list { max-height: 200px; overflow-y: auto; }
+/* change items */
+.cp-item { display: flex; align-items: center; padding: 7px 13px; border-bottom: 1px solid rgba(0,0,0,0.05); gap: 7px; }
+.cp-item:last-child { border-bottom: none; }
+.cp-type { width: 32px; font-size: 8px; font-weight: 600; text-transform: uppercase; padding: 1px 4px; border-radius: 3px; text-align: center; flex-shrink: 0; }
+.cp-type.style { background: rgba(0,122,255,0.1); color: #007AFF; }
+.cp-type.text  { background: rgba(52,199,89,0.1); color: #1d8a3a; }
+.cp-type.comment { background: rgba(255,149,0,0.1); color: #b86a00; }
+.cp-body { flex: 1; min-width: 0; }
+.cp-target { font-size: 11px; font-weight: 500; color: #1c1c1e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-detail { font-size: 10px; color: rgba(0,0,0,0.4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "SF Mono","Menlo",monospace; margin-top: 1px; }
+.cp-actions { display: flex; gap: 3px; }
+.cp-act { font-size: 9px; padding: 2px 6px; border-radius: 4px; border: none; cursor: pointer; font-family: inherit; font-weight: 500; }
+.cp-act.locate { background: rgba(0,122,255,0.1); color: #007AFF; }
+.cp-act.reset  { background: rgba(255,59,48,0.1); color: #FF3B30; }
+/* design items */
+.cp-design { display: flex; align-items: flex-start; padding: 8px 13px; border-bottom: 1px solid rgba(0,0,0,0.05); gap: 8px; }
+.cp-design:last-child { border-bottom: none; }
+.badge-col { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; padding-top: 1px; }
+.ebadge { font-size: 8px; font-weight: 600; padding: 1px 5px; border-radius: 3px; text-align: center; }
+.cp-copy { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-family: inherit; flex-shrink: 0; margin-top: 1px; }
+
+/* ──── Tabs state machine ──── */
+.cp-pane { display: none; }
+.cp-pane.visible { display: block; }
+.cp-tab.active { background: rgba(0,122,255,0.1); color: #007AFF; }
+
+/* ──── Inspect states ──── */
+.inspect-state { display: none; }
+.inspect-state.visible { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+
+<!-- 背景页面 -->
+<div class="fake-page" id="page">
+  <div id="hl" class="highlight-box"></div>
+
+  <div class="fake-hero">
+    <h1 id="heroTitle">欢迎使用 Design Easily</h1>
+    <p>选择「审查」模式，点击任意元素即可查看信息并发起 AI 设计请求</p>
+    <div class="fake-btn-row">
+      <button class="fake-btn primary" id="btn1">开始使用</button>
+      <button class="fake-btn secondary" id="btn2">了解更多</button>
+    </div>
+  </div>
+
+  <div class="fake-cards">
+    <div class="fake-card" id="card1">
+      <h3>🎨 样式编辑</h3>
+      <p>直接修改颜色、字体、间距，实时预览效果</p>
+    </div>
+    <div class="fake-card" id="card2">
+      <h3>💬 AI 建议</h3>
+      <p>描述你的需求，让 Claude Code 给出专业建议</p>
+    </div>
+    <div class="fake-card" id="card3">
+      <h3>⚙️ 自动开发</h3>
+      <p>一键提交到 Claude Code，自动修改源文件</p>
+    </div>
+  </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="toolbar" id="toolbar">
+  <span style="font-size:11px;font-weight:600;color:#1c1c1e;margin-right:2px;">DE</span>
+  <div class="tb-sep"></div>
+  <button class="tb-btn active" id="tb-inspect" onclick="setMode('inspect')">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
+    审查
+  </button>
+  <button class="tb-btn" id="tb-edit" onclick="setMode('edit')">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>
+    编辑
+  </button>
+  <button class="tb-btn" id="tb-comment" onclick="setMode('comment')">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 10a2 2 0 01-2 2H5l-3 3V4a2 2 0 012-2h8a2 2 0 012 2v6z"/></svg>
+    评论
+  </button>
+  <button class="tb-btn" id="tb-ruler" onclick="setMode('ruler')">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="5" width="14" height="6" rx="1"/><line x1="4" y1="8" x2="4" y2="11"/><line x1="7" y1="8" x2="7" y2="10"/><line x1="10" y1="8" x2="10" y2="11"/><line x1="13" y1="8" x2="13" y2="10"/></svg>
+    标尺
+  </button>
+  <div class="tb-sep"></div>
+  <div class="tb-dot" title="服务已连接"></div>
+</div>
+
+<!-- 右侧审查面板 -->
+<div class="inspect-panel" id="inspectPanel">
+  <div class="ip-wrap">
+
+    <!-- 初始状态：未选中 -->
+    <div class="inspect-state visible" id="state-idle">
+      <div style="padding:20px 14px;text-align:center;font-size:12px;color:rgba(0,0,0,0.3);">
+        点击页面上的任意元素查看详情
+      </div>
+    </div>
+
+    <!-- 选中状态：Button 组件 -->
+    <div class="inspect-state" id="state-btn">
+      <div class="ip-header">
+        <div class="ip-comp">Button <span class="ip-badge">组件</span></div>
+        <div class="ip-breadcrumb">App › HeroSection › Button</div>
+      </div>
+      <div class="ip-body">
+        <div class="ip-source">
+          <span style="font-size:13px;">⌨️</span>
+          <div style="flex:1;overflow:hidden;">
+            <div class="ip-file">components/Button.tsx</div>
+            <div class="ip-line">第 12 行 · 在 VS Code 中打开</div>
+          </div>
+          <span style="font-size:12px;color:rgba(0,0,0,0.3);">›</span>
+        </div>
+        <div class="ip-section">
+          <p class="ip-section-title">计算样式</p>
+          <div class="ip-row"><span class="ip-key">background</span><span class="ip-val">#007AFF</span></div>
+          <div class="ip-row"><span class="ip-key">color</span><span class="ip-val">white</span></div>
+          <div class="ip-row"><span class="ip-key">padding</span><span class="ip-val">12px 28px</span></div>
+          <div class="ip-row"><span class="ip-key">border-radius</span><span class="ip-val">12px</span></div>
+          <div class="ip-row"><span class="ip-key">font-size</span><span class="ip-val">15px</span></div>
+          <div class="ip-row"><span class="ip-key">font-weight</span><span class="ip-val">600</span></div>
+        </div>
+        <div class="ip-section">
+          <p class="ip-section-title">Props</p>
+          <div class="ip-row"><span class="ip-key">variant</span><span class="ip-val">"primary"</span></div>
+          <div class="ip-row"><span class="ip-key">onClick</span><span class="ip-val">ƒ handleClick</span></div>
+        </div>
+      </div>
+      <div class="ip-chat">
+        <div class="ip-msgs" id="btn-msgs"></div>
+        <div class="ip-input-row">
+          <textarea class="ip-input" id="btn-input" placeholder="描述你想改什么..." rows="1" oninput="autoResize(this)" onkeydown="handleKey(event,'btn')"></textarea>
+          <div class="ip-btns">
+            <button class="btn-suggest" id="btn-suggest" onclick="sendRequest('suggest','btn')" title="建议">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1a5 5 0 00-2.83 9.13L6 12h4l.83-1.87A5 5 0 008 1z"/><line x1="6" y1="14" x2="10" y2="14"/><line x1="6.5" y1="16" x2="9.5" y2="16"/></svg>
+            </button>
+            <button class="btn-develop" id="btn-develop" onclick="sendRequest('develop','btn')" title="开发">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5 1 8 4 11"/><polyline points="12 5 15 8 12 11"/><line x1="9" y1="3" x2="7" y2="13"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 选中状态：HeroTitle -->
+    <div class="inspect-state" id="state-hero">
+      <div class="ip-header">
+        <div class="ip-comp">HeroTitle <span class="ip-badge">组件</span></div>
+        <div class="ip-breadcrumb">App › HeroSection › HeroTitle</div>
+      </div>
+      <div class="ip-body">
+        <div class="ip-source">
+          <span style="font-size:13px;">⌨️</span>
+          <div style="flex:1;overflow:hidden;">
+            <div class="ip-file">components/HeroTitle.tsx</div>
+            <div class="ip-line">第 8 行 · 在 VS Code 中打开</div>
+          </div>
+          <span style="font-size:12px;color:rgba(0,0,0,0.3);">›</span>
+        </div>
+        <div class="ip-section">
+          <p class="ip-section-title">计算样式</p>
+          <div class="ip-row"><span class="ip-key">font-size</span><span class="ip-val">36px</span></div>
+          <div class="ip-row"><span class="ip-key">font-weight</span><span class="ip-val">700</span></div>
+          <div class="ip-row"><span class="ip-key">color</span><span class="ip-val">#1c1c1e</span></div>
+          <div class="ip-row"><span class="ip-key">text-align</span><span class="ip-val">center</span></div>
+        </div>
+      </div>
+      <div class="ip-chat">
+        <div class="ip-msgs" id="hero-msgs"></div>
+        <div class="ip-input-row">
+          <textarea class="ip-input" id="hero-input" placeholder="描述你想改什么..." rows="1" oninput="autoResize(this)" onkeydown="handleKey(event,'hero')"></textarea>
+          <div class="ip-btns">
+            <button class="btn-suggest" id="hero-suggest" onclick="sendRequest('suggest','hero')" title="建议">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1a5 5 0 00-2.83 9.13L6 12h4l.83-1.87A5 5 0 008 1z"/><line x1="6" y1="14" x2="10" y2="14"/><line x1="6.5" y1="16" x2="9.5" y2="16"/></svg>
+            </button>
+            <button class="btn-develop" id="hero-develop" onclick="sendRequest('develop','hero')" title="开发">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5 1 8 4 11"/><polyline points="12 5 15 8 12 11"/><line x1="9" y1="3" x2="7" y2="13"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 底部变更面板 -->
+<div class="changes-panel">
+  <div class="cp-wrap">
+    <div class="cp-bar">
+      <span class="cp-title">变更列表</span>
+      <span class="cp-count" id="total-count">2</span>
+      <div class="cp-tabs">
+        <button class="cp-tab active" onclick="setTab('all')">全部</button>
+        <button class="cp-tab" onclick="setTab('style')">样式</button>
+        <button class="cp-tab" onclick="setTab('text')">文本</button>
+        <button class="cp-tab" onclick="setTab('comment')">评论</button>
+        <button class="cp-tab" id="config-tab" onclick="setTab('config')">配置<span class="cp-pending" id="config-badge" style="display:none">0</span></button>
+      </div>
+      <div class="cp-btns">
+        <button class="cp-btn">导入</button>
+        <button class="cp-btn">导出</button>
+        <button class="cp-btn">Prompt</button>
+      </div>
+      <span class="cp-chevron">▾</span>
+    </div>
+
+    <!-- 全部 -->
+    <div class="cp-pane visible" id="pane-all">
+      <div class="cp-list">
+        <div class="cp-item">
+          <span class="cp-type style">样式</span>
+          <div class="cp-body"><div class="cp-target">Button</div><div class="cp-detail">background: #007AFF → #FF3B30</div></div>
+          <div class="cp-actions"><button class="cp-act locate">定位</button><button class="cp-act reset">重置</button></div>
+        </div>
+        <div class="cp-item">
+          <span class="cp-type text">文本</span>
+          <div class="cp-body"><div class="cp-target">HeroTitle</div><div class="cp-detail">"欢迎" → "欢迎使用 Design Easily"</div></div>
+          <div class="cp-actions"><button class="cp-act locate">定位</button><button class="cp-act reset">重置</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 样式 -->
+    <div class="cp-pane" id="pane-style">
+      <div class="cp-list">
+        <div class="cp-item">
+          <span class="cp-type style">样式</span>
+          <div class="cp-body"><div class="cp-target">Button</div><div class="cp-detail">background: #007AFF → #FF3B30</div></div>
+          <div class="cp-actions"><button class="cp-act locate">定位</button><button class="cp-act reset">重置</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文本 -->
+    <div class="cp-pane" id="pane-text">
+      <div class="cp-list">
+        <div class="cp-item">
+          <span class="cp-type text">文本</span>
+          <div class="cp-body"><div class="cp-target">HeroTitle</div><div class="cp-detail">"欢迎" → "欢迎使用 Design Easily"</div></div>
+          <div class="cp-actions"><button class="cp-act locate">定位</button><button class="cp-act reset">重置</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 评论 -->
+    <div class="cp-pane" id="pane-comment">
+      <div class="cp-list">
+        <div style="padding:16px;text-align:center;font-size:11px;color:rgba(0,0,0,0.3);">当前筛选无结果</div>
+      </div>
+    </div>
+
+    <!-- 配置 -->
+    <div class="cp-pane" id="pane-config">
+      <div class="cp-list" id="config-list">
+        <div style="padding:16px;text-align:center;font-size:11px;color:rgba(0,0,0,0.3);">暂无 MCP 请求记录</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── 状态 ────────────────────────────────────────────
+let currentMode = 'inspect'
+const interactiveIds = ['btn1','btn2','heroTitle','card1','card2','card3']
+// 文本变更记录 { id, target, oldVal, newVal }
+const textChanges = []
+// 评论记录 { id, target, text, el }
+const comments = []
+let changeIdCounter = 0
+
+// ─── 模式切换 ────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode
+  ;['inspect','edit','comment','ruler'].forEach(m => {
+    document.getElementById('tb-'+m).classList.toggle('active', m === mode)
+  })
+  hideHighlight()
+  removeRulerTooltip()
+  document.getElementById('inspectPanel').style.display = mode === 'inspect' ? '' : 'none'
+  document.body.style.cursor = (mode === 'inspect' || mode === 'edit' || mode === 'comment') ? 'crosshair' : ''
+  if (mode !== 'inspect') showState('idle')
+}
+
+// ─── 高亮框 ──────────────────────────────────────────
+function showHighlight(target, color) {
+  const hl = document.getElementById('hl')
+  const rect = target.getBoundingClientRect()
+  color = color || '#007AFF'
+  Object.assign(hl.style, {
+    display: 'block',
+    top: rect.top + window.scrollY + 'px',
+    left: rect.left + window.scrollX + 'px',
+    width: rect.width + 'px',
+    height: rect.height + 'px',
+    border: `2px solid ${color}`,
+    background: color === '#007AFF' ? 'rgba(0,122,255,0.06)' : 'rgba(255,149,0,0.06)',
+  })
+}
+function hideHighlight() {
+  document.getElementById('hl').style.display = 'none'
+}
+
+// ─── 审查模式 ────────────────────────────────────────
+const inspectTargets = { btn1:'btn', btn2:'btn', heroTitle:'hero' }
+
+document.addEventListener('mouseover', e => {
+  const t = e.target
+  if (!t.id || !interactiveIds.includes(t.id)) return
+  if (currentMode === 'inspect' && inspectTargets[t.id]) showHighlight(t)
+  if (currentMode === 'edit') showHighlight(t)
+  if (currentMode === 'comment') showHighlight(t, '#FF9500')
+})
+document.addEventListener('mouseout', e => {
+  if (currentMode === 'ruler') return
+  hideHighlight()
+})
+
+document.addEventListener('click', e => {
+  const t = e.target
+  if (!t.id || !interactiveIds.includes(t.id)) return
+  if (currentMode === 'inspect') handleInspectClick(e, t)
+  if (currentMode === 'edit') handleEditClick(e, t)
+  if (currentMode === 'comment') handleCommentClick(e, t)
+}, true)
+
+function handleInspectClick(e, t) {
+  e.preventDefault(); e.stopPropagation()
+  const state = inspectTargets[t.id]
+  if (state) showState(state)
+}
+
+function showState(name) {
+  document.querySelectorAll('.inspect-state').forEach(el => el.classList.remove('visible'))
+  const el = document.getElementById('state-' + name)
+  if (el) el.classList.add('visible')
+}
+
+// ─── 编辑模式 ────────────────────────────────────────
+function handleEditClick(e, t) {
+  e.preventDefault(); e.stopPropagation()
+  hideHighlight()
+
+  const oldVal = t.textContent
+  const rect = t.getBoundingClientRect()
+
+  // 创建浮层编辑框
+  const overlay = document.createElement('div')
+  Object.assign(overlay.style, {
+    position:'fixed', zIndex:'9999',
+    top: rect.top + 'px', left: rect.left + 'px',
+    minWidth: rect.width + 'px',
+  })
+  const inp = document.createElement('input')
+  inp.value = oldVal
+  Object.assign(inp.style, {
+    width: '100%', padding:'4px 8px',
+    fontSize: window.getComputedStyle(t).fontSize,
+    fontWeight: window.getComputedStyle(t).fontWeight,
+    fontFamily: 'inherit',
+    border: '2px solid #007AFF',
+    borderRadius: '6px',
+    outline: 'none',
+    background: 'rgba(255,255,255,0.96)',
+    color: '#1c1c1e',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+    boxSizing: 'border-box',
+  })
+  overlay.appendChild(inp)
+  document.body.appendChild(overlay)
+  inp.focus(); inp.select()
+
+  function commit() {
+    const newVal = inp.value.trim()
+    overlay.remove()
+    if (newVal && newVal !== oldVal) {
+      t.textContent = newVal
+      const id = 'tc-' + (++changeIdCounter)
+      textChanges.push({ id, target: t.id, oldVal, newVal })
+      updateChangesPanel()
+      showToast('文本已修改')
+    }
+  }
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commit()
+    if (e.key === 'Escape') overlay.remove()
+  })
+  inp.addEventListener('blur', commit)
+}
+
+// ─── 评论模式 ────────────────────────────────────────
+function handleCommentClick(e, t) {
+  e.preventDefault(); e.stopPropagation()
+  hideHighlight()
+
+  // 已有弹窗则移除
+  document.getElementById('comment-popover')?.remove()
+
+  const rect = t.getBoundingClientRect()
+  const pop = document.createElement('div')
+  pop.id = 'comment-popover'
+  Object.assign(pop.style, {
+    position:'fixed', zIndex:'9999',
+    top: (rect.bottom + 8) + 'px',
+    left: rect.left + 'px',
+    background: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(16px)',
+    border: '1px solid rgba(0,0,0,0.12)',
+    borderRadius: '12px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+    padding: '10px',
+    width: '220px',
+    fontFamily: 'inherit',
+  })
+
+  const nameMap = { btn1:'Button', btn2:'Button', heroTitle:'HeroTitle', card1:'Card', card2:'Card', card3:'Card' }
+  const targetName = nameMap[t.id] || t.id
+
+  pop.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:rgba(0,0,0,0.4);margin-bottom:6px;">添加评论 · ${targetName}</div>
+    <textarea id="comment-input" rows="2" placeholder="输入评论..." style="width:100%;border:1px solid rgba(0,0,0,0.12);border-radius:8px;padding:6px 8px;font-size:12px;font-family:inherit;resize:none;outline:none;box-sizing:border-box;"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end;">
+      <button onclick="document.getElementById('comment-popover').remove()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:none;background:rgba(0,0,0,0.07);color:#1c1c1e;cursor:pointer;font-family:inherit;">取消</button>
+      <button id="comment-submit" style="font-size:11px;padding:4px 10px;border-radius:6px;border:none;background:#007AFF;color:white;cursor:pointer;font-family:inherit;">添加</button>
+    </div>
+  `
+  document.body.appendChild(pop)
+  const ta = document.getElementById('comment-input')
+  ta.focus()
+
+  document.getElementById('comment-submit').onclick = () => {
+    const text = ta.value.trim()
+    if (!text) return
+    pop.remove()
+    const id = 'cm-' + (++changeIdCounter)
+    comments.push({ id, target: targetName, text })
+    addCommentPin(t, comments.length)
+    updateChangesPanel()
+    showToast('评论已添加')
+  }
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      document.getElementById('comment-submit').click()
+    }
+    if (e.key === 'Escape') pop.remove()
+  })
+}
+
+function addCommentPin(target, num) {
+  const pin = document.createElement('div')
+  Object.assign(pin.style, {
+    position: 'absolute',
+    width: '18px', height: '18px',
+    background: '#FF9500',
+    color: 'white',
+    borderRadius: '50%',
+    fontSize: '10px', fontWeight: '700',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: '100',
+    top: '-8px', right: '-8px',
+    boxShadow: '0 2px 6px rgba(255,149,0,0.5)',
+    pointerEvents: 'none',
+    fontFamily: 'inherit',
+  })
+  pin.textContent = num
+  if (window.getComputedStyle(target).position === 'static') {
+    target.style.position = 'relative'
+  }
+  target.appendChild(pin)
+}
+
+// ─── 标尺模式 ────────────────────────────────────────
+let rulerTooltip = null
+
+function removeRulerTooltip() {
+  rulerTooltip?.remove()
+  rulerTooltip = null
+  hideHighlight()
+}
+
+document.addEventListener('mousemove', e => {
+  if (currentMode !== 'ruler') return
+  const t = document.elementFromPoint(e.clientX, e.clientY)
+  if (!t || t.closest('.toolbar') || t.closest('.changes-panel') || t.closest('.inspect-panel')) {
+    removeRulerTooltip(); return
+  }
+  showHighlight(t, '#5856D6')
+  const rect = t.getBoundingClientRect()
+
+  if (!rulerTooltip) {
+    rulerTooltip = document.createElement('div')
+    Object.assign(rulerTooltip.style, {
+      position: 'fixed', zIndex: '9999', pointerEvents: 'none',
+      background: 'rgba(255,255,255,0.96)',
+      color: '#1c1c1e', padding: '6px 10px',
+      border: '1px solid rgba(0,0,0,0.1)',
+      borderRadius: '8px', fontSize: '11px', lineHeight: '1.6',
+      fontFamily: '"SF Mono","Menlo",monospace',
+      whiteSpace: 'nowrap',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+    })
+    document.body.appendChild(rulerTooltip)
+  }
+
+  rulerTooltip.innerHTML =
+    `<span style="color:rgba(255,255,255,0.5)">W</span> ${Math.round(rect.width)}  ` +
+    `<span style="color:rgba(255,255,255,0.5)">H</span> ${Math.round(rect.height)}<br>` +
+    `<span style="color:rgba(255,255,255,0.5)">X</span> ${Math.round(rect.left)}  ` +
+    `<span style="color:rgba(255,255,255,0.5)">Y</span> ${Math.round(rect.top)}`
+
+  const tx = Math.min(e.clientX + 14, window.innerWidth - 130)
+  const ty = e.clientY - 56 < 0 ? e.clientY + 14 : e.clientY - 56
+  rulerTooltip.style.left = tx + 'px'
+  rulerTooltip.style.top = ty + 'px'
+})
+
+document.addEventListener('mouseleave', () => {
+  if (currentMode === 'ruler') removeRulerTooltip()
+})
+
+// ─── 聊天交互 ────────────────────────────────────────
+const chatState = {}
+let requestCounter = 0
+
+function addMsg(ctx, role, content) {
+  if (!chatState[ctx]) chatState[ctx] = []
+  chatState[ctx].push({ role, content })
+  renderMsgs(ctx)
+}
+
+function updateLastMsg(ctx, content) {
+  const msgs = chatState[ctx]
+  if (msgs && msgs.length && msgs[msgs.length-1].role === 'assistant') {
+    msgs[msgs.length-1].content = content
+    renderMsgs(ctx)
+  }
+}
+
+function renderMsgs(ctx) {
+  const el = document.getElementById(ctx + '-msgs')
+  if (!el) return
+  el.innerHTML = (chatState[ctx] || []).map(m =>
+    `<div class="msg ${m.role} ${m.role === 'assistant' && m.content.startsWith('⏳') ? 'loading' : ''}">${esc(m.content)}</div>`
+  ).join('')
+  el.scrollTop = el.scrollHeight
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')
+}
+
+function autoResize(el) {
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 80) + 'px'
+}
+
+function handleKey(e, ctx) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendRequest('develop', ctx)
+  }
+}
+
+function setButtonsDisabled(ctx, disabled) {
+  const s = document.getElementById(ctx + '-suggest')
+  const d = document.getElementById(ctx + '-develop')
+  if (s) s.disabled = disabled
+  if (d) d.disabled = disabled
+}
+
+// MCP 请求历史
+const designEntries = []
+
+function sendRequest(action, ctx) {
+  const input = document.getElementById(ctx + '-input')
+  const text = input.value.trim()
+  if (!text) return
+  if (document.getElementById(ctx + '-suggest').disabled) return
+
+  const userMsg = text
+  input.value = ''
+  input.style.height = 'auto'
+
+  addMsg(ctx, 'user', userMsg)
+  addMsg(ctx, 'assistant', '⏳ 发送中...')
+  setButtonsDisabled(ctx, true)
+
+  // Simulate design:queued
+  const id = 'req-' + (++requestCounter)
+  const entry = { id, action, userMessage: userMsg, status: 'pending', ctx }
+  designEntries.unshift(entry)
+  updateConfigList()
+
+  setTimeout(() => {
+    // design:queued
+    updateLastMsg(ctx, '⏳ 已发送，等待 Claude Code...')
+    entry.status = 'pending'
+    updateConfigList()
+
+    setTimeout(() => {
+      // design:processing
+      updateLastMsg(ctx, '⚙️ Claude Code 处理中...')
+      entry.status = 'processing'
+      updateConfigList()
+
+      setTimeout(() => {
+        // design:done
+        const isDevelop = action === 'develop'
+        if (isDevelop) {
+          const files = 'src/components/' + (ctx === 'btn' ? 'Button.tsx' : 'HeroTitle.tsx')
+          updateLastMsg(ctx, '✅ 已修改：' + files)
+          entry.status = 'completed'
+          entry.changedFiles = [files]
+        } else {
+          const suggestion = ctx === 'btn'
+            ? '可以将 border-radius 增大到 999px 获得胶囊形状，或调整为 8px 保持适度圆角。'
+            : '建议将标题字号改为 40px 并增加 letter-spacing: -0.5px，视觉冲击力更强。'
+          updateLastMsg(ctx, suggestion)
+          entry.status = 'completed'
+          entry.content = suggestion
+        }
+        setButtonsDisabled(ctx, false)
+        updateConfigList()
+      }, 2000)
+    }, 800)
+  }, 400)
+}
+
+function updateConfigList() {
+  const list = document.getElementById('config-list')
+  const badge = document.getElementById('config-badge')
+  const pending = designEntries.filter(e => e.status === 'pending' || e.status === 'processing').length
+
+  if (pending > 0) {
+    badge.textContent = pending
+    badge.style.display = ''
+  } else {
+    badge.style.display = 'none'
+  }
+
+  if (designEntries.length === 0) {
+    list.innerHTML = '<div style="padding:16px;text-align:center;font-size:11px;color:rgba(0,0,0,0.3);">暂无 MCP 请求记录</div>'
+    return
+  }
+
+  list.innerHTML = designEntries.map(e => {
+    const isSuggest = e.action === 'suggest'
+    const typeStyle = isSuggest ? 'background:rgba(88,86,214,0.1);color:#5856D6' : 'background:rgba(52,199,89,0.1);color:#1d8a3a'
+    const typeLabel = isSuggest ? '建议' : '开发'
+
+    let statusStyle, statusLabel, summaryHtml
+    switch(e.status) {
+      case 'pending':
+        statusStyle = 'background:rgba(255,149,0,0.1);color:#b86a00'
+        statusLabel = '等待中'
+        summaryHtml = `<div class="cp-detail" style="color:rgba(255,149,0,0.6);font-family:inherit;">等待 Claude Code...</div>`
+        break
+      case 'processing':
+        statusStyle = 'background:rgba(255,149,0,0.1);color:#b86a00'
+        statusLabel = '处理中'
+        summaryHtml = `<div class="cp-detail" style="color:rgba(255,149,0,0.6);font-family:inherit;">Claude Code 处理中...</div>`
+        break
+      case 'completed':
+        statusStyle = isSuggest ? 'background:rgba(88,86,214,0.08);color:#5856D6' : 'background:rgba(52,199,89,0.08);color:#1d8a3a'
+        statusLabel = '已完成'
+        const txt = isSuggest ? (e.content||'') : (e.changedFiles||[]).join(', ')
+        summaryHtml = `<div class="cp-detail">${esc(txt)}</div>`
+        break
+      case 'failed':
+        statusStyle = 'background:rgba(255,59,48,0.1);color:#FF3B30'
+        statusLabel = '失败'
+        summaryHtml = `<div class="cp-detail" style="color:rgba(255,59,48,0.55);font-family:inherit;">${esc(e.error||'')}</div>`
+        break
+    }
+
+    const copyEnabled = e.status === 'completed'
+    const copyStyle = copyEnabled
+      ? 'border:1px solid rgba(0,0,0,0.1);background:transparent;color:rgba(0,0,0,0.3);cursor:pointer;'
+      : 'border:1px solid rgba(0,0,0,0.07);background:transparent;color:rgba(0,0,0,0.18);cursor:not-allowed;opacity:0.4;'
+
+    return `
+      <div class="cp-design">
+        <div class="badge-col">
+          <span class="ebadge" style="${typeStyle}">${typeLabel}</span>
+          <span class="ebadge" style="${statusStyle}">${statusLabel}</span>
+        </div>
+        <div class="cp-body">
+          <div class="cp-target">${esc(e.userMessage)}</div>
+          ${summaryHtml}
+        </div>
+        <button class="cp-copy" style="${copyStyle}" ${copyEnabled?'':'disabled'} onclick="copyEntry('${e.id}')">复制</button>
+      </div>`
+  }).join('')
+}
+
+function copyEntry(id) {
+  const e = designEntries.find(x => x.id === id)
+  if (!e || e.status !== 'completed') return
+  const text = e.action === 'suggest' ? (e.content||'') : (e.changedFiles||[]).join('\n')
+  navigator.clipboard?.writeText(text)
+  // visual feedback
+  showToast('已复制')
+}
+
+function showToast(msg) {
+  const t = document.createElement('div')
+  Object.assign(t.style, {
+    position:'fixed', bottom:'90px', left:'50%', transform:'translateX(-50%)',
+    background:'rgba(30,30,32,0.85)', color:'white', padding:'8px 16px', backdropFilter:'blur(12px)',
+    borderRadius:'8px', fontSize:'12px', fontWeight:'500', zIndex:'9999',
+    whiteSpace:'nowrap', pointerEvents:'none',
+  })
+  t.textContent = msg
+  document.body.appendChild(t)
+  setTimeout(() => t.remove(), 2000)
+}
+
+// ─── 变更面板实时更新 ────────────────────────────────
+function updateChangesPanel() {
+  const total = textChanges.length + comments.length
+  const countEl = document.getElementById('total-count')
+  if (total > 0) {
+    countEl.textContent = total
+    countEl.style.display = ''
+  } else {
+    countEl.style.display = 'none'
+  }
+
+  // 全部 pane
+  renderItemsTo('pane-all', [...textChanges.map(c => renderTextItem(c)), ...comments.map(c => renderCommentItem(c))])
+  // 样式 pane（预置，不动）
+  // 文本 pane
+  renderItemsTo('pane-text', textChanges.map(c => renderTextItem(c)))
+  // 评论 pane
+  renderItemsTo('pane-comment', comments.map(c => renderCommentItem(c)))
+}
+
+function renderItemsTo(paneId, htmls) {
+  const pane = document.getElementById(paneId)
+  if (!pane) return
+  const list = pane.querySelector('.cp-list') || pane
+  if (htmls.length === 0) {
+    list.innerHTML = '<div style="padding:14px;text-align:center;font-size:11px;color:rgba(0,0,0,0.3);">暂无内容</div>'
+  } else {
+    list.innerHTML = htmls.join('')
+  }
+}
+
+function renderTextItem(c) {
+  return `<div class="cp-item">
+    <span class="cp-type text">文本</span>
+    <div class="cp-body">
+      <div class="cp-target">${esc(c.target)}</div>
+      <div class="cp-detail">"${esc(c.oldVal)}" → "${esc(c.newVal)}"</div>
+    </div>
+    <div class="cp-actions">
+      <button class="cp-act reset" onclick="removeTextChange('${c.id}')">重置</button>
+    </div>
+  </div>`
+}
+
+function renderCommentItem(c) {
+  return `<div class="cp-item">
+    <span class="cp-type comment">评论</span>
+    <div class="cp-body">
+      <div class="cp-target">${esc(c.target)}</div>
+      <div class="cp-detail">${esc(c.text)}</div>
+    </div>
+    <div class="cp-actions">
+      <button class="cp-act reset" onclick="removeComment('${c.id}')">删除</button>
+    </div>
+  </div>`
+}
+
+function removeTextChange(id) {
+  const idx = textChanges.findIndex(c => c.id === id)
+  if (idx === -1) return
+  const c = textChanges[idx]
+  const el = document.getElementById(c.target)
+  if (el) el.textContent = c.oldVal
+  textChanges.splice(idx, 1)
+  updateChangesPanel()
+}
+
+function removeComment(id) {
+  const idx = comments.findIndex(c => c.id === id)
+  if (idx !== -1) comments.splice(idx, 1)
+  updateChangesPanel()
+}
+
+// ─── Tab 切换 ────────────────────────────────────────
+function setTab(tab) {
+  document.querySelectorAll('.cp-tab').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll('.cp-pane').forEach(p => p.classList.remove('visible'))
+  const btn = document.querySelector(`.cp-tab[onclick="setTab('${tab}')"]`)
+  if (btn) btn.classList.add('active')
+  const pane = document.getElementById('pane-' + tab)
+  if (pane) pane.classList.add('visible')
+}
+</script>
+</body>
+</html>
