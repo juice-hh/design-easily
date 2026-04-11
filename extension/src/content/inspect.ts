@@ -5,6 +5,7 @@
 
 import { extractFiberInfo, getComponentBreadcrumb, type FiberInfo } from './fiber'
 import { wsClient } from './ws'
+import { requestHistory } from './requestHistory.js'
 
 // ─── Highlight overlay ────────────────────────────────────────────────────────
 
@@ -333,6 +334,8 @@ export class InspectPanel {
   private ctx: ElementContext | null = null
   private messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
   private pendingRequestId: string | null = null
+  private pendingAction: 'suggest' | 'develop' | null = null
+  private pendingUserMessage: string | null = null
   private wsUnsubscribe: (() => void) | null = null
 
   constructor() {
@@ -347,6 +350,16 @@ export class InspectPanel {
       if (msg.type === 'design:queued') {
         this.pendingRequestId = msg.id
         this.updateLastAssistantMessage('⏳ 已发送，等待 Claude Code...')
+        if (this.pendingAction !== null && this.pendingUserMessage !== null) {
+          requestHistory.add({
+            id: msg.id,
+            action: this.pendingAction,
+            userMessage: this.pendingUserMessage,
+            status: 'pending',
+          })
+          this.pendingAction = null
+          this.pendingUserMessage = null
+        }
       }
       if (msg.type === 'design:processing') {
         if (msg.id !== this.pendingRequestId) return
@@ -498,6 +511,9 @@ export class InspectPanel {
     const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.chat-input')
     const text = textarea?.value.trim()
     if (!text || this.pendingRequestId) return
+
+    this.pendingAction = action
+    this.pendingUserMessage = text
 
     this.addMessage('user', text)
     if (textarea) textarea.value = ''
