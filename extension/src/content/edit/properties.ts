@@ -1,0 +1,462 @@
+/**
+ * Figma-style property panel — right-side panel for editing element styles.
+ * CSS: properties-styles.ts | Icons: properties-icons.ts | Sections: properties-sections.ts
+ */
+
+import { getLocalFonts } from './fonts.js'
+import { changeTracker } from '../changes.js'
+import { extractFiberInfo } from '../fiber.js'
+import { PANEL_STYLES } from './properties-styles.js'
+import { makePanelDraggable } from '../draggable.js'
+import {
+  renderRulerToggle,
+  renderPositionSection,
+  renderAutoLayoutSection,
+  renderAppearanceSection,
+  renderFillSection,
+  renderStrokeSection,
+  renderTextSection,
+} from './properties-sections.js'
+
+export interface StyleEdit {
+  property: string
+  value: string
+}
+
+export type StyleChangeHandler = (edit: StyleEdit, syncComponent: boolean) => void
+
+function cssVar(prop: string): string {
+  return prop.replace(/([A-Z])/g, '-$1').toLowerCase()
+}
+
+export class PropertiesPanel {
+  private host: HTMLElement
+  private shadow: ShadowRoot
+  private target: Element | null = null
+  private syncComponent = false
+  private onChangeHandler: StyleChangeHandler | null = null
+  private fonts: string[] = []
+  private rulerOn = true
+  private onRulerToggleHandler: ((on: boolean) => void) | null = null
+  private activeTab: 'style' | 'code' = 'style'
+  private dragCleanup: (() => void) | null = null
+
+  constructor() {
+    this.host = document.createElement('div')
+    this.host.setAttribute('data-design-easily', 'edit-panel')
+    this.shadow = this.host.attachShadow({ mode: 'open' })
+    this.shadow.innerHTML = `<style>${PANEL_STYLES}</style>`
+    this.host.style.display = 'none'
+    document.body.appendChild(this.host)
+    getLocalFonts().then((f) => { this.fonts = f })
+  }
+
+  onStyleChange(handler: StyleChangeHandler): void {
+    this.onChangeHandler = handler
+  }
+
+  async show(target: Element): Promise<void> {
+    this.target = target
+    this.fonts = await getLocalFonts()
+    this.host.style.display = ''
+    this.render()
+  }
+
+  hide(): void {
+    this.host.style.display = 'none'
+    this.target = null
+  }
+
+  private render(): void {
+    if (!this.target) return
+    const el = this.target
+    const computed = window.getComputedStyle(el)
+    const fiber = extractFiberInfo(el)
+    const name = fiber.componentName ?? el.tagName.toLowerCase()
+
+    const fontOptions = this.fonts
+      .map((f) => `<option value="${f}" ${computed.fontFamily.includes(f) ? 'selected' : ''}>${f}</option>`)
+      .join('')
+
+    const sourceInfo = fiber.sourceFile
+      ? `${fiber.sourceFile}${fiber.sourceLine ? ':' + fiber.sourceLine : ''}`
+      : '无源码信息（需要 React 开发模式）'
+
+    this.shadow.innerHTML = `
+      <style>${PANEL_STYLES}
+      .mode-tabs{display:flex;gap:0;padding:0 12px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:0}
+      .mode-tab{flex:1;padding:7px 0;background:transparent;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,0.38);font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.12s}
+      .mode-tab.active{color:rgba(255,255,255,0.9);border-bottom-color:#007AFF}
+      .mode-tab:hover:not(.active){color:rgba(255,255,255,0.6)}
+      .code-panel{padding:12px}
+      .code-info{font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:8px;word-break:break-all;line-height:1.5}
+      .code-actions{display:flex;gap:6px;margin-bottom:10px}
+      .code-btn{padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.8);font-size:11px;cursor:pointer;font-family:inherit;transition:background 0.12s}
+      .code-btn:hover{background:rgba(255,255,255,0.12)}
+      .code-block{background:rgba(0,0,0,0.35);border-radius:6px;padding:10px;font-family:"SF Mono","Menlo",monospace;font-size:10px;color:#7dd3fc;line-height:1.6;word-break:break-all;white-space:pre-wrap;max-height:300px;overflow-y:auto}
+      </style>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="title">${name}</div>
+          <div class="subtitle">&lt;${el.tagName.toLowerCase()}&gt;${el.id ? ' #' + el.id : ''}${el.classList[0] ? ' .' + el.classList[0] : ''}</div>
+        </div>
+        <div class="mode-tabs">
+          <button class="mode-tab${this.activeTab === 'style' ? ' active' : ''}" data-tab="style">样式</button>
+          <button class="mode-tab${this.activeTab === 'code' ? ' active' : ''}" data-tab="code">代码</button>
+        </div>
+        <div id="tab-style" style="${this.activeTab !== 'style' ? 'display:none' : ''}">
+          ${renderRulerToggle(this.rulerOn)}
+          ${renderPositionSection(computed)}
+          ${renderAutoLayoutSection(computed)}
+          ${renderAppearanceSection(computed)}
+          ${renderFillSection(computed)}
+          ${renderStrokeSection(computed)}
+          ${renderTextSection(computed, el, fontOptions)}
+          <div class="sync-row">
+            <span class="sync-label">同步所有「${name}」实例</span>
+            <input type="checkbox" class="toggle" id="de-sync" ${this.syncComponent ? 'checked' : ''} />
+          </div>
+        </div>
+        <div id="tab-code" class="code-panel" style="${this.activeTab !== 'code' ? 'display:none' : ''}">
+          <div class="code-info">${sourceInfo}</div>
+          <div class="code-actions">
+            <button class="code-btn" data-action="copy-path">复制路径</button>
+            <button class="code-btn" data-action="open-vscode">在 VS Code 打开</button>
+            <button class="code-btn" data-action="export-json">导出 JSON</button>
+          </div>
+          <div class="code-block">${this.buildCodeInfo(el, fiber, computed)}</div>
+        </div>
+      </div>`
+
+    this.bindEvents()
+    this.bindTabEvents(fiber)
+
+    this.dragCleanup?.()
+    const header = this.shadow.querySelector<HTMLElement>('.panel-header')
+    if (header) this.dragCleanup = makePanelDraggable(header, this.host)
+  }
+
+  // ── Tab switching ──────────────────────────────────────────
+
+  private bindTabEvents(fiber: ReturnType<typeof extractFiberInfo>): void {
+    const sh = this.shadow
+    sh.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset['tab'] as 'style' | 'code'
+        if (tab === this.activeTab) return
+        this.activeTab = tab
+        sh.querySelectorAll('.mode-tab').forEach((b) => b.classList.toggle('active', b === btn))
+        const stylePanel = sh.getElementById('tab-style')
+        const codePanel = sh.getElementById('tab-code')
+        if (stylePanel) stylePanel.style.display = tab === 'style' ? '' : 'none'
+        if (codePanel) codePanel.style.display = tab === 'code' ? '' : 'none'
+      })
+    })
+
+    sh.querySelector<HTMLButtonElement>('[data-action="copy-path"]')?.addEventListener('click', () => {
+      const path = fiber.sourceFile ?? ''
+      navigator.clipboard.writeText(path).then(() => {
+        const btn = sh.querySelector<HTMLButtonElement>('[data-action="copy-path"]')
+        if (btn) { btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制路径' }, 1500) }
+      })
+    })
+
+    sh.querySelector<HTMLButtonElement>('[data-action="open-vscode"]')?.addEventListener('click', () => {
+      if (fiber.sourceFile) {
+        import('../ws.js').then(({ wsClient }) => {
+          wsClient.send({ type: 'vscode:open', file: fiber.sourceFile!, line: fiber.sourceLine ?? 1 })
+        })
+      }
+    })
+
+    sh.querySelector<HTMLButtonElement>('[data-action="export-json"]')?.addEventListener('click', () => {
+      import('../changes.js').then(({ changeTracker }) => {
+        const json = changeTracker.exportJSON()
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `design-easily-${Date.now()}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      })
+    })
+  }
+
+  private buildCodeInfo(el: Element, fiber: ReturnType<typeof extractFiberInfo>, computed: CSSStyleDeclaration): string {
+    const lines: string[] = []
+    lines.push(`// 组件: ${fiber.componentName ?? el.tagName.toLowerCase()}`)
+    if (fiber.sourceFile) {
+      lines.push(`// 源文件: ${fiber.sourceFile}${fiber.sourceLine ? ':' + fiber.sourceLine : ''}`)
+    }
+    lines.push(`// 标签: <${el.tagName.toLowerCase()}${el.id ? ' id="' + el.id + '"' : ''}${el.classList[0] ? ' class="' + Array.from(el.classList).join(' ') + '"' : ''}>`)
+    lines.push('')
+    lines.push('/* 当前样式 */')
+    const styleProps = ['display', 'width', 'height', 'fontSize', 'color', 'backgroundColor', 'padding', 'margin', 'borderRadius', 'flexDirection', 'gap']
+    for (const prop of styleProps) {
+      const val = computed.getPropertyValue(prop.replace(/([A-Z])/g, '-$1').toLowerCase())
+      if (val && val !== 'none' && val !== 'normal' && val !== 'auto' && val !== '0px' && val !== 'rgba(0, 0, 0, 0)') {
+        lines.push(`${prop.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${val};`)
+      }
+    }
+    return lines.join('\n')
+  }
+
+  // ── Style helpers ──────────────────────────────────────────
+
+  private apply(prop: string, value: string): void {
+    const el = this.target as HTMLElement
+    const old = el.style.getPropertyValue(cssVar(prop)) ||
+                window.getComputedStyle(el).getPropertyValue(cssVar(prop))
+    el.style.setProperty(cssVar(prop), value)
+    this.recordChange(prop, old, value)
+    this.notifyChange({ property: prop, value })
+  }
+
+  private bindNum(id: string, prop: string, suffix = 'px'): void {
+    this.shadow.getElementById(id)?.addEventListener('change', (e) => {
+      this.apply(prop, (e.target as HTMLInputElement).value + suffix)
+    })
+  }
+
+  private bindColorPair(prefix: string, cssProp: string): void {
+    const picker = this.shadow.getElementById(`${prefix}-picker`) as HTMLInputElement | null
+    const hexIn  = this.shadow.getElementById(`${prefix}-hex`) as HTMLInputElement | null
+
+    const apply = (hex: string): void => {
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return
+      const bg = this.shadow.querySelector<HTMLDivElement>(`#${prefix}-picker`)
+        ?.closest('.cswatch')?.querySelector<HTMLDivElement>('.cswatch-bg')
+      if (picker) picker.value = hex
+      if (hexIn)  hexIn.value = hex.replace('#', '').toUpperCase()
+      if (bg)     bg.style.background = hex
+      this.apply(cssProp, hex)
+    }
+
+    picker?.addEventListener('input', () => apply(picker.value))
+    hexIn?.addEventListener('change', () => apply('#' + hexIn.value))
+  }
+
+  // ── Event binding ──────────────────────────────────────────
+
+  private bindEvents(): void {
+    const el = this.target as HTMLElement
+    const sh = this.shadow
+
+    this.bindPositionEvents(el, sh)
+    this.bindAutoLayoutEvents(el, sh)
+    this.bindAppearanceEvents(sh)
+    this.bindFillStrokeEvents(sh)
+    this.bindTextEvents(el, sh)
+
+    sh.getElementById('de-sync')?.addEventListener('change', (e) => {
+      this.syncComponent = (e.target as HTMLInputElement).checked
+    })
+
+    sh.getElementById('ruler-toggle')?.addEventListener('change', (e) => {
+      this.rulerOn = (e.target as HTMLInputElement).checked
+      this.onRulerToggleHandler?.(this.rulerOn)
+      const label = sh.querySelector('#ruler-toggle')?.previousElementSibling
+      if (label) label.textContent = this.rulerOn ? '开启' : '关闭'
+    })
+  }
+
+  private bindPositionEvents(el: HTMLElement, sh: ShadowRoot): void {
+    // Horizontal alignment via margin
+    const hAlignMap: Record<string, () => void> = {
+      'al-left':  () => { this.apply('marginLeft', '');     this.apply('marginRight', 'auto') },
+      'al-ch':    () => { this.apply('marginLeft', 'auto'); this.apply('marginRight', 'auto') },
+      'al-right': () => { this.apply('marginLeft', 'auto'); this.apply('marginRight', '') },
+    }
+    Object.entries(hAlignMap).forEach(([id, fn]) => {
+      sh.getElementById(id)?.addEventListener('click', () => { fn(); this.render() })
+    })
+
+    // Vertical alignment via align-self
+    const vAlignMap: Record<string, string> = {
+      'al-top': 'flex-start', 'al-mid': 'center', 'al-bottom': 'flex-end',
+    }
+    Object.entries(vAlignMap).forEach(([id, val]) => {
+      sh.getElementById(id)?.addEventListener('click', () => { this.apply('alignSelf', val); this.render() })
+    })
+
+    this.bindNum('pos-x', 'left')
+    this.bindNum('pos-y', 'top')
+
+    sh.getElementById('pos-rot')?.addEventListener('change', (e) => {
+      const deg = (e.target as HTMLInputElement).value
+      this.apply('transform', `rotate(${deg}deg)`)
+    })
+
+    sh.getElementById('btn-fliph')?.addEventListener('click', () => {
+      const cur = window.getComputedStyle(el).transform
+      this.apply('transform', cur.includes('scaleX(-1)') ? '' : 'scaleX(-1)')
+    })
+    sh.getElementById('btn-flipv')?.addEventListener('click', () => {
+      const cur = window.getComputedStyle(el).transform
+      this.apply('transform', cur.includes('scaleY(-1)') ? '' : 'scaleY(-1)')
+    })
+  }
+
+  private bindAutoLayoutEvents(el: HTMLElement, sh: ShadowRoot): void {
+    sh.getElementById('al-toggle')?.addEventListener('click', () => {
+      const isFlex = window.getComputedStyle(el).display === 'flex'
+      this.apply('display', isFlex ? '' : 'flex')
+      this.render()
+    })
+
+    const flowMap: Record<string, () => void> = {
+      'flow-row':     () => { this.apply('flexDirection', 'row');    this.apply('flexWrap', 'nowrap') },
+      'flow-col':     () => { this.apply('flexDirection', 'column'); this.apply('flexWrap', 'nowrap') },
+      'flow-rowwrap': () => { this.apply('flexDirection', 'row');    this.apply('flexWrap', 'wrap') },
+      'flow-rev': () => {
+        const cur = window.getComputedStyle(el).flexDirection
+        const rev = cur.includes('reverse') ? cur.replace('-reverse', '') : cur + '-reverse'
+        this.apply('flexDirection', rev)
+      },
+    }
+    Object.entries(flowMap).forEach(([id, fn]) => {
+      sh.getElementById(id)?.addEventListener('click', () => { fn(); this.render() })
+    })
+
+    const applyResize = (axis: 'w' | 'h'): void => {
+      const numEl  = sh.getElementById(`resize-${axis}`) as HTMLInputElement | null
+      const modeEl = sh.getElementById(`resize-${axis}-mode`) as HTMLSelectElement | null
+      if (!numEl || !modeEl) return
+      const prop = axis === 'w' ? 'width' : 'height'
+      switch (modeEl.value) {
+        case 'hug':  this.apply(prop, 'fit-content'); this.apply('flex', '');  break
+        case 'fill': this.apply(prop, '100%');        this.apply('flex', '1'); break
+        default:     this.apply(prop, numEl.value + 'px'); this.apply('flex', '')
+      }
+    }
+    sh.getElementById('resize-w')?.addEventListener('change', () => applyResize('w'))
+    sh.getElementById('resize-h')?.addEventListener('change', () => applyResize('h'))
+    sh.getElementById('resize-w-mode')?.addEventListener('change', () => applyResize('w'))
+    sh.getElementById('resize-h-mode')?.addEventListener('change', () => applyResize('h'))
+
+    sh.querySelectorAll<HTMLButtonElement>('.agbtn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.apply('alignItems',    btn.dataset['ai'] ?? 'flex-start')
+        this.apply('justifyContent', btn.dataset['jc'] ?? 'flex-start')
+        this.render()
+      })
+    })
+
+    this.bindNum('al-gap', 'gap')
+    sh.getElementById('pad-h')?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLInputElement).value + 'px'
+      this.apply('paddingLeft', v); this.apply('paddingRight', v)
+    })
+    sh.getElementById('pad-v')?.addEventListener('change', (e) => {
+      const v = (e.target as HTMLInputElement).value + 'px'
+      this.apply('paddingTop', v); this.apply('paddingBottom', v)
+    })
+    sh.getElementById('al-clip')?.addEventListener('change', (e) => {
+      this.apply('overflow', (e.target as HTMLInputElement).checked ? 'hidden' : 'visible')
+    })
+  }
+
+  private bindAppearanceEvents(sh: ShadowRoot): void {
+    sh.getElementById('ap-opacity')?.addEventListener('change', (e) => {
+      const pct = parseFloat((e.target as HTMLInputElement).value)
+      this.apply('opacity', String(pct / 100))
+    })
+    this.bindNum('ap-radius', 'borderRadius')
+    sh.getElementById('btn-corner-ind')?.addEventListener('click', () => this.render())
+    ;(['ap-tl', 'ap-tr', 'ap-br', 'ap-bl'] as const).forEach((id, i) => {
+      const props = ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius']
+      this.bindNum(id, props[i] as string)
+    })
+    sh.getElementById('btn-vis')?.addEventListener('click', () => {
+      const el = this.target as HTMLElement
+      const cur = window.getComputedStyle(el).visibility
+      this.apply('visibility', cur === 'hidden' ? 'visible' : 'hidden')
+    })
+  }
+
+  private bindFillStrokeEvents(sh: ShadowRoot): void {
+    this.bindColorPair('fill', 'backgroundColor')
+    sh.getElementById('fill-add')?.addEventListener('click', () => {
+      this.apply('backgroundColor', '#ffffff'); this.render()
+    })
+
+    this.bindColorPair('stroke', 'borderColor')
+    this.bindNum('stroke-w', 'borderWidth')
+    sh.getElementById('stroke-style')?.addEventListener('change', (e) => {
+      this.apply('borderStyle', (e.target as HTMLSelectElement).value)
+    })
+    sh.getElementById('stroke-add')?.addEventListener('click', () => {
+      this.apply('borderWidth', '1px')
+      this.apply('borderStyle', 'solid')
+      this.apply('borderColor', '#000000')
+      this.render()
+    })
+  }
+
+  private bindTextEvents(el: HTMLElement, sh: ShadowRoot): void {
+    sh.getElementById('txt-font')?.addEventListener('change', (e) => {
+      this.apply('fontFamily', (e.target as HTMLSelectElement).value)
+    })
+    this.bindNum('txt-size', 'fontSize')
+    sh.getElementById('txt-weight')?.addEventListener('change', (e) => {
+      this.apply('fontWeight', (e.target as HTMLSelectElement).value)
+    })
+    this.bindNum('txt-lh', 'lineHeight')
+    this.bindNum('txt-ls', 'letterSpacing')
+    this.bindColorPair('txt-color', 'color')
+
+    sh.querySelectorAll<HTMLButtonElement>('[data-ta]').forEach((b) => {
+      b.addEventListener('click', () => {
+        this.apply('textAlign', b.dataset['ta'] ?? 'left'); this.render()
+      })
+    })
+
+    const textarea = sh.getElementById('txt-content') as HTMLTextAreaElement | null
+    if (textarea) {
+      textarea.addEventListener('change', () => {
+        const old = el.textContent?.trim() ?? ''
+        el.textContent = textarea.value
+        this.recordChange('textContent', old, textarea.value)
+        this.notifyChange({ property: 'textContent', value: textarea.value })
+      })
+    }
+  }
+
+  // ── Bookkeeping ────────────────────────────────────────────
+
+  private recordChange(property: string, oldValue: string, newValue: string): void {
+    if (!this.target) return
+    const fiber = extractFiberInfo(this.target)
+    const sel = this.target.id
+      ? `#${this.target.id}`
+      : `${this.target.tagName.toLowerCase()}${this.target.classList[0] ? '.' + this.target.classList[0] : ''}`
+    changeTracker.addChange({
+      type: property === 'textContent' ? 'text' : 'style',
+      selector: sel,
+      componentName: fiber.componentName,
+      sourceFile: fiber.sourceFile,
+      sourceLine: fiber.sourceLine,
+      property,
+      oldValue,
+      newValue,
+    })
+  }
+
+  private notifyChange(edit: StyleEdit): void {
+    this.onChangeHandler?.(edit, this.syncComponent)
+  }
+
+  onRulerToggle(handler: (on: boolean) => void): void {
+    this.onRulerToggleHandler = handler
+  }
+
+  setMultiSelect(count: number): void {
+    const title = this.shadow.querySelector('.title')
+    if (title) title.textContent = `已选 ${count} 个组件`
+  }
+
+  destroy(): void {
+    this.host.remove()
+  }
+}
