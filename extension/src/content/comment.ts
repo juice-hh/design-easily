@@ -4,95 +4,115 @@
  * Comments render as floating bubbles anchored to elements.
  */
 
-import { extractFiberInfo } from './fiber'
 import { changeTracker } from './changes'
-
-function buildSelector(el: Element): string {
-  if (el.id) return `#${el.id}`
-  const tag = el.tagName.toLowerCase()
-  const classes = Array.from(el.classList).slice(0, 2).join('.')
-  return classes ? `${tag}.${classes}` : tag
-}
 
 // ─── Comment bubble ───────────────────────────────────────────────────────────
 
 const BUBBLE_STYLES = `
-  :host {
-    all: initial;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  :host { all: initial; }
+  * { box-sizing: border-box; }
+  .badge {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #8B5CF6; color: white;
+    font-size: 10px; font-weight: 700; line-height: 20px; text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    cursor: pointer; user-select: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    transition: transform 0.1s, background 0.1s;
   }
-  .bubble {
-    position: fixed;
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border: 1px solid rgba(0,0,0,0.1);
+  .badge:hover { transform: scale(1.15); background: #7c3aed; }
+  .popup {
+    position: absolute;
+    top: 26px; right: 0;
+    background: rgba(28,28,30,0.92);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 10px;
-    padding: 8px 12px;
-    max-width: 240px;
-    font-size: 12px;
-    color: #1c1c1e;
-    line-height: 1.4;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-    cursor: default;
-    user-select: none;
-    z-index: 2147483644;
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
+    padding: 10px 12px;
+    min-width: 160px; max-width: 240px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    z-index: 1;
   }
-  .bubble-text {
-    flex: 1;
-    word-break: break-word;
+  .popup-text {
+    font-size: 12px; color: rgba(255,255,255,0.85);
+    line-height: 1.5; word-break: break-word; margin-bottom: 8px;
   }
-  .bubble-del {
-    flex-shrink: 0;
-    font-size: 14px;
-    color: rgba(0,0,0,0.3);
-    cursor: pointer;
-    line-height: 1;
-    margin-top: -1px;
+  .del-btn {
+    display: block; width: 100%; padding: 4px 0;
+    background: transparent; border: 1px solid rgba(255,59,48,0.35);
+    border-radius: 5px; font-size: 11px; color: #FF453A;
+    cursor: pointer; font-family: inherit;
+    transition: background 0.12s;
   }
-  .bubble-del:hover { color: #FF3B30; }
+  .del-btn:hover { background: rgba(255,59,48,0.12); }
 `
 
-class CommentBubble {
+export class CommentBubble {
   private host: HTMLElement
   private shadow: ShadowRoot
   private commentId: string
+  private popupOpen = false
 
-  constructor(commentId: string, text: string, anchorEl: Element) {
+  constructor(commentId: string, text: string, anchorEl: Element, index: number) {
     this.commentId = commentId
     this.host = document.createElement('div')
     this.host.setAttribute('data-design-easily', 'comment-bubble')
     this.shadow = this.host.attachShadow({ mode: 'open' })
     this.shadow.innerHTML = `
       <style>${BUBBLE_STYLES}</style>
-      <div class="bubble">
-        <span class="bubble-text">${text}</span>
-        <span class="bubble-del" title="删除">×</span>
+      <div class="badge">${index}</div>
+      <div class="popup" style="display:none">
+        <div class="popup-text">${this.escapeHtml(text)}</div>
+        <button class="del-btn">删除评论</button>
       </div>
     `
-    this.host.style.cssText = 'position: fixed; z-index: 2147483644; pointer-events: none;'
-    this.shadow.querySelector('.bubble-del')?.addEventListener('click', () => this.remove())
+    this.host.style.cssText = 'position: fixed; z-index: 2147483644; pointer-events: all;'
+
+    this.shadow.querySelector('.badge')?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.togglePopup()
+    })
+    this.shadow.querySelector('.del-btn')?.addEventListener('click', () => this.remove())
+
+    // Click outside to close popup
+    document.addEventListener('click', () => {
+      if (this.popupOpen) this.closePopup()
+    })
+
     document.body.appendChild(this.host)
     this.position(anchorEl)
 
-    // Reposition on scroll/resize
     window.addEventListener('scroll', () => this.position(anchorEl), { passive: true })
     window.addEventListener('resize', () => this.position(anchorEl), { passive: true })
   }
 
+  private togglePopup(): void {
+    this.popupOpen = !this.popupOpen
+    const popup = this.shadow.querySelector<HTMLElement>('.popup')
+    if (popup) popup.style.display = this.popupOpen ? 'block' : 'none'
+  }
+
+  private closePopup(): void {
+    this.popupOpen = false
+    const popup = this.shadow.querySelector<HTMLElement>('.popup')
+    if (popup) popup.style.display = 'none'
+  }
+
+  private escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
   position(anchorEl: Element): void {
     const rect = anchorEl.getBoundingClientRect()
-    this.host.style.cssText = `
-      position: fixed;
-      z-index: 2147483644;
-      pointer-events: all;
-      top: ${rect.top - 8}px;
-      left: ${rect.right + 8}px;
-      max-width: 240px;
-    `
+    // Badge sits at top-right corner of element (offset 10px outward)
+    Object.assign(this.host.style, {
+      position: 'fixed',
+      top: `${rect.top - 10}px`,
+      left: `${rect.right - 10}px`,
+      zIndex: '2147483644',
+    })
   }
 
   remove(): void {
@@ -156,7 +176,7 @@ const DIALOG_STYLES = `
   .confirm:hover { background: #0063CC; }
 `
 
-function showCommentDialog(
+export function showCommentDialog(
   x: number,
   y: number,
   onConfirm: (text: string) => void,
@@ -198,79 +218,3 @@ function showCommentDialog(
   setTimeout(() => ta?.focus(), 0)
 }
 
-// ─── Comment mode controller ──────────────────────────────────────────────────
-
-export class CommentMode {
-  private bubbles: CommentBubble[] = []
-  private lastCommentText: string | null = null
-
-  enable(): void {
-    document.addEventListener('click', this.onClick, true)
-    document.addEventListener('keydown', this.onKeyDown)
-    document.addEventListener('keyup', this.onKeyUp)
-    document.body.style.cursor = 'cell'
-  }
-
-  disable(): void {
-    document.removeEventListener('click', this.onClick, true)
-    document.removeEventListener('keydown', this.onKeyDown)
-    document.removeEventListener('keyup', this.onKeyUp)
-    document.body.style.cursor = ''
-  }
-
-  private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'Shift') {
-      document.body.style.cursor = 'copy'
-    }
-  }
-
-  private onKeyUp = (e: KeyboardEvent): void => {
-    if (e.key === 'Shift') {
-      document.body.style.cursor = 'cell'
-    }
-  }
-
-  private placeComment(text: string, selector: string, fiber: { componentName: string | null }, target: Element): void {
-    changeTracker.addComment({
-      selector,
-      componentName: fiber.componentName,
-      text,
-    })
-
-    const stored = changeTracker.getComments()
-    const latest = stored[stored.length - 1]
-    this.bubbles = [...this.bubbles, new CommentBubble(latest.id, text, target)]
-  }
-
-  private onClick = (e: MouseEvent): void => {
-    const target = e.target as Element
-    if (!target || target.getAttribute('data-design-easily')) return
-
-    e.preventDefault()
-    e.stopPropagation()
-
-    const fiber = extractFiberInfo(target)
-    const selector = buildSelector(target)
-
-    if (e.shiftKey && this.lastCommentText !== null) {
-      this.placeComment(this.lastCommentText, selector, fiber, target)
-      return
-    }
-
-    const rect = target.getBoundingClientRect()
-    const dialogX = Math.min(rect.right + 12, window.innerWidth - 280)
-    const dialogY = Math.max(rect.top, 10)
-
-    showCommentDialog(dialogX, dialogY, (text) => {
-      this.lastCommentText = text
-      this.placeComment(text, selector, fiber, target)
-    })
-  }
-
-  destroy(): void {
-    this.disable()
-    this.bubbles.forEach((b) => b.remove())
-    this.bubbles = []
-    this.lastCommentText = null
-  }
-}

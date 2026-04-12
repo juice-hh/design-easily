@@ -528,7 +528,8 @@ export class InspectPanel {
         const latest = stored[stored.length - 1]
         const targetEl = document.querySelector(sel)
         if (targetEl && latest) {
-          this.commentBubbles.push(new CommentBubble(latest.id, text, targetEl))
+          const index = stored.length
+          this.commentBubbles.push(new CommentBubble(latest.id, text, targetEl, index))
         }
         if (ta) { ta.value = ''; ta.style.height = '' }
       })

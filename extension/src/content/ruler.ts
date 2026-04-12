@@ -20,14 +20,14 @@ function ensureStyles(): void {
     }
     .de-ruler-line {
       position: absolute;
-      background: rgba(255, 59, 48, 0.6);
+      background: rgba(52, 199, 89, 0.65);
     }
     .de-ruler-line.anchor {
-      background: rgba(255, 149, 0, 0.7);
+      background: rgba(139, 92, 246, 0.8);
     }
     .de-ruler-label {
       position: absolute;
-      background: rgba(255, 59, 48, 0.85);
+      background: rgba(52, 199, 89, 0.9);
       color: white;
       font-size: 10px;
       font-family: "SF Mono", "Menlo", monospace;
@@ -36,15 +36,18 @@ function ensureStyles(): void {
       white-space: nowrap;
       font-weight: 500;
     }
+    .de-ruler-label.anchor {
+      background: rgba(139, 92, 246, 0.9);
+    }
     .de-ruler-target {
       position: absolute;
-      border: 1.5px dashed rgba(255, 149, 0, 0.9);
+      border: 1.5px dashed rgba(52, 199, 89, 0.85);
       pointer-events: none;
       box-sizing: border-box;
     }
     .de-size-label {
       position: absolute;
-      background: rgba(255, 149, 0, 0.9);
+      background: rgba(52, 199, 89, 0.9);
       color: white;
       font-size: 10px;
       font-family: "SF Mono", "Menlo", monospace;
@@ -54,7 +57,7 @@ function ensureStyles(): void {
     }
     .de-ruler-anchor-label {
       position: absolute;
-      background: rgba(0, 122, 255, 0.85);
+      background: rgba(139, 92, 246, 0.9);
       color: white;
       font-size: 9px;
       font-family: "SF Mono", "Menlo", monospace;
@@ -63,7 +66,7 @@ function ensureStyles(): void {
       white-space: nowrap;
     }
     .de-ruler-target.anchored {
-      border-color: rgba(0, 122, 255, 0.9);
+      border-color: rgba(139, 92, 246, 0.9);
     }
   `
   document.head.appendChild(style)
@@ -105,7 +108,7 @@ function createLine(
   canvas.appendChild(line)
 
   const lbl = document.createElement('div')
-  lbl.className = 'de-ruler-label'
+  lbl.className = extraClass ? `de-ruler-label ${extraClass}` : 'de-ruler-label'
   lbl.textContent = label
   Object.assign(lbl.style, {
     left: `${x + w / 2 - 15}px`,
@@ -114,11 +117,47 @@ function createLine(
   canvas.appendChild(lbl)
 }
 
+function drawGuideH(canvas: HTMLElement, y: number, anchor = false): void {
+  const color = anchor ? 'rgba(139,92,246,0.4)' : 'rgba(52,199,89,0.4)'
+  const line = document.createElement('div')
+  Object.assign(line.style, {
+    position: 'absolute',
+    left: '0',
+    top: `${y}px`,
+    width: '100%',
+    height: '0',
+    borderTop: `1px dashed ${color}`,
+    pointerEvents: 'none',
+  })
+  canvas.appendChild(line)
+}
+
+function drawGuideV(canvas: HTMLElement, x: number, anchor = false): void {
+  const color = anchor ? 'rgba(139,92,246,0.4)' : 'rgba(52,199,89,0.4)'
+  const line = document.createElement('div')
+  Object.assign(line.style, {
+    position: 'absolute',
+    top: '0',
+    left: `${x}px`,
+    height: '100%',
+    width: '0',
+    borderLeft: `1px dashed ${color}`,
+    pointerEvents: 'none',
+  })
+  canvas.appendChild(line)
+}
+
 function drawRuler(target: Element, anchorEl: Element | null = null): void {
   const canvas = getCanvas()
   clearCanvas()
 
   const tr = target.getBoundingClientRect()
+
+  // Draw full-screen alignment guides at element edges
+  drawGuideH(canvas, tr.top)
+  drawGuideH(canvas, tr.bottom)
+  drawGuideV(canvas, tr.left)
+  drawGuideV(canvas, tr.right)
 
   // Draw target outline
   const outline = document.createElement('div')
@@ -144,6 +183,12 @@ function drawRuler(target: Element, anchorEl: Element | null = null): void {
   // If anchor element set and different from target, draw distance between them
   if (anchorEl && anchorEl !== target) {
     const ar = anchorEl.getBoundingClientRect()
+
+    // Draw anchor element guide lines (purple)
+    drawGuideH(canvas, ar.top, true)
+    drawGuideH(canvas, ar.bottom, true)
+    drawGuideV(canvas, ar.left, true)
+    drawGuideV(canvas, ar.right, true)
 
     // Draw anchor outline (blue)
     const anchorOutline = document.createElement('div')
@@ -299,6 +344,20 @@ export class RulerMode {
     document.removeEventListener('mouseover', this.onHover, true)
     document.removeEventListener('click', this.onClick, true)
     document.body.style.cursor = ''
+    this.anchorEl = null
+    clearCanvas()
+    const canvas = document.getElementById(RULER_ID)
+    if (canvas) canvas.style.display = 'none'
+  }
+
+  enablePassive(): void {
+    const canvas = getCanvas()
+    canvas.style.display = 'block'
+    document.addEventListener('mouseover', this.onHover, true)
+  }
+
+  disablePassive(): void {
+    document.removeEventListener('mouseover', this.onHover, true)
     this.anchorEl = null
     clearCanvas()
     const canvas = document.getElementById(RULER_ID)
