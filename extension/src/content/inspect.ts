@@ -6,6 +6,9 @@
 import { extractFiberInfo, getComponentBreadcrumb, type FiberInfo } from './fiber'
 import { wsClient } from './ws'
 import { requestHistory } from './requestHistory.js'
+import { changeTracker } from './changes.js'
+import { CommentBubble } from './comment.js'
+import { makePanelDraggable } from './draggable.js'
 
 // ─── Highlight overlay ────────────────────────────────────────────────────────
 
@@ -20,9 +23,9 @@ function getOrCreateHighlight(): HTMLElement {
       position: 'fixed',
       pointerEvents: 'none',
       zIndex: '2147483640',
-      border: '2px solid #007AFF',
+      border: '2px solid #8B5CF6',
       borderRadius: '4px',
-      background: 'rgba(0, 122, 255, 0.06)',
+      background: 'rgba(139, 92, 246, 0.06)',
       transition: 'all 0.08s ease',
       display: 'none',
       boxSizing: 'border-box',
@@ -32,7 +35,7 @@ function getOrCreateHighlight(): HTMLElement {
   return el
 }
 
-function positionHighlight(el: HTMLElement, target: Element): void {
+function positionHighlight(el: HTMLElement, target: Element, componentName?: string): void {
   const rect = target.getBoundingClientRect()
   Object.assign(el.style, {
     display: 'block',
@@ -41,6 +44,46 @@ function positionHighlight(el: HTMLElement, target: Element): void {
     width: `${rect.width}px`,
     height: `${rect.height}px`,
   })
+
+  // Component name label at top-left corner
+  let label = el.querySelector<HTMLElement>('.de-component-label')
+  if (!label) {
+    label = document.createElement('div')
+    label.className = 'de-component-label'
+    Object.assign(label.style, {
+      position: 'absolute',
+      left: '-1px',
+      background: '#8B5CF6',
+      color: 'white',
+      fontSize: '10px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro", monospace',
+      fontWeight: '600',
+      padding: '2px 6px',
+      borderRadius: '4px 4px 4px 0',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      lineHeight: '16px',
+      zIndex: '1',
+    })
+    el.appendChild(label)
+  }
+  const name = componentName ?? (target as HTMLElement).tagName?.toLowerCase()
+  if (name) {
+    label.textContent = name
+    label.style.display = 'block'
+    // If element is near top of viewport, show label below instead of above
+    if (rect.top < 26) {
+      label.style.top = '100%'
+      label.style.bottom = ''
+      label.style.borderRadius = '0 4px 4px 4px'
+    } else {
+      label.style.bottom = '100%'
+      label.style.top = ''
+      label.style.borderRadius = '4px 4px 4px 0'
+    }
+  } else {
+    label.style.display = 'none'
+  }
 }
 
 function hideHighlight(): void {
@@ -100,107 +143,138 @@ const PANEL_STYLES = `
   :host {
     all: initial;
     position: fixed;
-    top: 64px;
-    right: 16px;
+    top: 56px;
+    right: 12px;
     z-index: 2147483646;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    width: 320px;
-    max-height: calc(100vh - 80px);
-    display: flex;
-    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    width: 260px;
   }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   .panel {
-    background: rgba(255, 255, 255, 0.82);
+    background: rgba(28, 28, 30, 0.88);
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: 16px;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.16), 0 1px 0 rgba(255,255,255,0.8) inset;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.06) inset;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 80px);
-  }
-  .panel-header {
-    padding: 14px 16px 10px;
-    border-bottom: 1px solid rgba(0,0,0,0.07);
-    flex-shrink: 0;
-  }
-  .component-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: #1c1c1e;
-    margin: 0 0 4px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .component-badge {
-    font-size: 10px;
-    font-weight: 500;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(0,122,255,0.1);
-    color: #007AFF;
-    letter-spacing: 0.2px;
-  }
-  .breadcrumb {
-    font-size: 11px;
-    color: rgba(0,0,0,0.4);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .panel-body {
-    overflow-y: auto;
-    flex: 1;
-    padding: 0 0 8px;
-  }
-  .section {
-    padding: 10px 16px 4px;
-  }
-  .section-title {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: rgba(0,0,0,0.35);
-    margin: 0 0 6px;
-  }
-  .row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 3px 0;
-    font-size: 12px;
-  }
-  .row-key {
-    color: rgba(0,0,0,0.45);
-    flex-shrink: 0;
-    width: 110px;
-  }
-  .row-val {
-    color: #1c1c1e;
-    text-align: right;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 160px;
-    font-family: "SF Mono", "Menlo", monospace;
+    color: rgba(255,255,255,0.9);
     font-size: 11px;
   }
+  .ip-header {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .ip-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,0.1); border-radius: 5px;
+    padding: 3px 7px; font-size: 10px; font-weight: 600;
+    color: rgba(255,255,255,0.7); margin-bottom: 7px;
+  }
+  .ip-name {
+    font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.9); margin-bottom: 3px;
+  }
+  .ip-path {
+    font-size: 10px; color: rgba(255,255,255,0.35);
+    font-family: "SF Mono","Menlo",monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;
+  }
+  .ip-path:hover { color: #4DA3FF; }
+  .ip-section {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .ip-sec-title {
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3);
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 7px;
+  }
+  .ip-props { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ip-prop {
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,0.08); border-radius: 5px;
+    padding: 3px 7px; font-size: 10px;
+  }
+  .ip-prop-k { color: rgba(255,255,255,0.35); }
+  .ip-prop-v { color: rgba(255,255,255,0.85); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .ip-prop-swatch {
+    width: 10px; height: 10px; border-radius: 2px;
+    border: 0.5px solid rgba(255,255,255,0.15); flex-shrink: 0;
+  }
+  .ip-action-row {
+    padding: 8px 12px; display: flex; gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .ip-btn {
+    flex: 1; height: 28px; border-radius: 6px;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    font-family: inherit; font-size: 11px; font-weight: 500;
+    color: rgba(255,255,255,0.75); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    transition: background 0.12s;
+  }
+  .ip-btn:hover { background: rgba(255,255,255,0.1); }
+  .ip-btn.dark {
+    background: rgba(255,255,255,0.9); border-color: transparent; color: #1c1c1e;
+  }
+  .ip-btn.dark:hover { background: white; }
+  .ip-chat { padding: 8px 12px 12px; }
+  .ip-chat-title {
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3);
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 7px;
+  }
+  .ip-chat-msgs {
+    max-height: 140px; overflow-y: auto; margin-bottom: 8px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .msg { padding: 7px 9px; border-radius: 8px; font-size: 11px; line-height: 1.4; max-width: 92%; }
+  .msg.user { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); align-self: flex-end; border-bottom-right-radius: 3px; }
+  .msg.assistant { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.75); align-self: flex-start; border-bottom-left-radius: 3px; font-family: "SF Mono","Menlo",monospace; white-space: pre-wrap; word-break: break-word; }
+  .msg.loading { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.3); align-self: flex-start; font-style: italic; }
+  .ip-chat-input { display: flex; flex-direction: column; gap: 6px; }
+  .ip-chat-btns { display: flex; gap: 6px; justify-content: flex-end; }
+  .ip-btn-sm {
+    padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer;
+    font-family: inherit; transition: opacity 0.12s;
+  }
+  .ip-btn-sm:hover { opacity: 0.82; }
+  .ip-btn-sm.ghost {
+    background: transparent; border: 1.5px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.45);
+  }
+  .ip-btn-sm.secondary {
+    background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); border: none;
+  }
+  .ip-btn-sm.primary { background: #007AFF; color: white; border: none; }
+  .ip-btn-sm:disabled { opacity: 0.35; cursor: not-allowed; }
+  .ip-textarea {
+    width: 100%; border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.07); font-size: 11px; font-family: inherit;
+    padding: 6px 8px; resize: none; color: rgba(255,255,255,0.9); height: 44px; outline: none;
+    transition: border-color 0.15s; box-sizing: border-box;
+  }
+  .ip-textarea::placeholder { color: rgba(255,255,255,0.25); }
+  .ip-textarea:focus { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.1); }
+  .ip-send {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: rgba(255,255,255,0.9); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.12s;
+  }
+  .ip-send:hover { background: white; }
+  .ip-send:disabled { opacity: 0.3; cursor: not-allowed; }
   .source-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 16px;
+    padding: 8px 12px;
     cursor: pointer;
-    border-top: 1px solid rgba(0,0,0,0.06);
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-top: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
   }
   .source-row:hover {
-    background: rgba(0,122,255,0.05);
+    background: rgba(255,255,255,0.05);
   }
   .source-icon {
     font-size: 13px;
@@ -209,125 +283,6 @@ const PANEL_STYLES = `
     flex: 1;
     overflow: hidden;
   }
-  .source-file {
-    font-size: 11px;
-    font-family: "SF Mono", "Menlo", monospace;
-    color: #007AFF;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .source-line {
-    font-size: 10px;
-    color: rgba(0,0,0,0.4);
-  }
-  .source-no-info {
-    font-size: 11px;
-    color: rgba(0,0,0,0.3);
-    padding: 8px 16px;
-  }
-  .chat-area {
-    border-top: 1px solid rgba(0,0,0,0.07);
-    padding: 10px 12px;
-    flex-shrink: 0;
-  }
-  .chat-messages {
-    max-height: 200px;
-    overflow-y: auto;
-    margin-bottom: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .msg {
-    padding: 8px 10px;
-    border-radius: 10px;
-    font-size: 12px;
-    line-height: 1.4;
-    max-width: 90%;
-  }
-  .msg.user {
-    background: #007AFF;
-    color: white;
-    align-self: flex-end;
-    border-bottom-right-radius: 4px;
-  }
-  .msg.assistant {
-    background: rgba(0,0,0,0.06);
-    color: #1c1c1e;
-    align-self: flex-start;
-    border-bottom-left-radius: 4px;
-    font-family: "SF Mono", "Menlo", monospace;
-    font-size: 11px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .msg.loading {
-    background: rgba(0,0,0,0.04);
-    color: rgba(0,0,0,0.35);
-    align-self: flex-start;
-    font-size: 11px;
-    font-style: italic;
-  }
-  .chat-input-row {
-    display: flex;
-    gap: 6px;
-    align-items: flex-end;
-  }
-  .chat-input {
-    flex: 1;
-    border: 1px solid rgba(0,0,0,0.12);
-    border-radius: 10px;
-    padding: 8px 10px;
-    font-size: 12px;
-    font-family: inherit;
-    resize: none;
-    outline: none;
-    background: rgba(255,255,255,0.7);
-    max-height: 80px;
-    line-height: 1.4;
-    color: #1c1c1e;
-    transition: border-color 0.15s;
-  }
-  .chat-input:focus {
-    border-color: #007AFF;
-  }
-  .chat-buttons {
-    display: flex;
-    flex-direction: row;
-    gap: 5px;
-    flex-shrink: 0;
-  }
-  .btn-suggest {
-    width: 34px;
-    height: 34px;
-    border-radius: 8px;
-    background: rgba(0,122,255,0.1);
-    color: #007AFF;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: opacity 0.15s;
-  }
-  .btn-develop {
-    width: 34px;
-    height: 34px;
-    border-radius: 8px;
-    background: #007AFF;
-    color: white;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: opacity 0.15s;
-  }
-  .btn-suggest:hover, .btn-develop:hover { opacity: 0.8; }
-  .btn-suggest:disabled, .btn-develop:disabled { opacity: 0.3; cursor: not-allowed; }
 `
 
 export class InspectPanel {
@@ -339,6 +294,8 @@ export class InspectPanel {
   private pendingAction: 'suggest' | 'develop' | null = null
   private pendingUserMessage: string | null = null
   private wsUnsubscribe: (() => void) | null = null
+  private commentBubbles: CommentBubble[] = []
+  private dragCleanup: (() => void) | null = null
 
   constructor() {
     this.host = document.createElement('div')
@@ -398,41 +355,62 @@ export class InspectPanel {
 
   private renderPanel(): void {
     const ctx = this.ctx!
-    const { fiber, tag, id, classList } = ctx
+    const { fiber, tag, id, classList, computedStyles, rect } = ctx
 
     const componentName = fiber.componentName ?? tag
     const sourceFile = fiber.sourceFile
     const sourceLine = fiber.sourceLine
     const shortFile = sourceFile ? sourceFile.split('/').slice(-2).join('/') : null
 
-    const styleRows = Object.entries(ctx.computedStyles)
-      .slice(0, 12)
-      .map(([k, v]) => `
-        <div class="row">
-          <span class="row-key">${k}</span>
-          <span class="row-val" title="${v}">${v}</span>
-        </div>
-      `).join('')
+    // Badge label: prefer component tag type, fallback to element tag
+    const badgeLabel = fiber.componentName ? tag : tag.toUpperCase()
 
-    const propRows = Object.entries(fiber.props)
-      .slice(0, 8)
-      .map(([k, v]) => `
-        <div class="row">
-          <span class="row-key">${k}</span>
-          <span class="row-val" title="${String(v)}">${JSON.stringify(v).slice(0, 40)}</span>
-        </div>
-      `).join('')
+    // Header path
+    const pathHtml = shortFile
+      ? `<div class="ip-path" data-action="open-vscode" title="在 VS Code 中打开">${shortFile}:${sourceLine}</div>`
+      : `<div class="ip-path" style="cursor:default;color:rgba(255,255,255,0.2)">未检测到源码（需 React 开发模式）</div>`
 
-    const sourceSection = shortFile
-      ? `<div class="source-row" data-action="open-vscode">
-          <span class="source-icon">⌨️</span>
-          <div class="source-info">
-            <div class="source-file" title="${sourceFile}">${shortFile}</div>
-            <div class="source-line">第 ${sourceLine} 行 · 在 VS Code 中打开</div>
-          </div>
-          <span>›</span>
-        </div>`
-      : `<div class="source-no-info">未检测到源码信息（需 React 开发模式）</div>`
+    // 尺寸 section
+    const w = Math.round(rect.width)
+    const h = Math.round(rect.height)
+    const x = Math.round(rect.left)
+    const y = Math.round(rect.top)
+    const dimProps = [
+      { k: '宽', v: `${w}` }, { k: '高', v: `${h}` },
+      { k: 'X', v: `${x}` }, { k: 'Y', v: `${y}` },
+    ]
+
+    // 样式 section: bg, radius, padding, shadow
+    const styleEntries: Array<{ k: string; v: string; color?: string }> = []
+    const bg = computedStyles['backgroundColor'] ?? ''
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+      styleEntries.push({ k: '背景', v: this.colorToHex(bg), color: bg })
+    }
+    const radius = computedStyles['borderRadius']
+    if (radius && radius !== '0px') styleEntries.push({ k: '圆角', v: radius })
+    const padding = computedStyles['padding']
+    if (padding && padding !== '0px') styleEntries.push({ k: '内距', v: padding })
+    const shadow = computedStyles['boxShadow']
+    if (shadow && shadow !== 'none') styleEntries.push({ k: '阴影', v: shadow.slice(0, 20) + '…' })
+
+    // 字体 section
+    const fontEntries: Array<{ k: string; v: string; color?: string }> = []
+    const ff = computedStyles['fontFamily']
+    if (ff) fontEntries.push({ k: '字体', v: ff.split(',')[0].replace(/['"]/g, '').trim() })
+    const fs = computedStyles['fontSize']
+    if (fs) fontEntries.push({ k: '字号', v: fs })
+    const fw = computedStyles['fontWeight']
+    if (fw) fontEntries.push({ k: '字重', v: fw })
+    const color = computedStyles['color'] ?? ''
+    if (color) fontEntries.push({ k: '颜色', v: this.colorToHex(color), color })
+
+    const renderProps = (entries: Array<{ k: string; v: string; color?: string }>): string =>
+      entries.map(({ k, v, color: c }) => `
+        <div class="ip-prop">
+          ${c ? `<div class="ip-prop-swatch" style="background:${c}"></div>` : ''}
+          <span class="ip-prop-k">${k}</span>
+          <span class="ip-prop-v">${this.escapeHtml(v)}</span>
+        </div>`).join('')
 
     const messagesHtml = this.messages.map((m) =>
       `<div class="msg ${m.role}">${this.escapeHtml(m.content)}</div>`
@@ -441,35 +419,41 @@ export class InspectPanel {
     this.shadow.innerHTML = `
       <style>${PANEL_STYLES}</style>
       <div class="panel">
-        <div class="panel-header">
-          <p class="component-name">
-            <span>${componentName}</span>
-            ${fiber.componentName ? `<span class="component-badge">组件</span>` : ''}
-          </p>
-          <p class="breadcrumb">${ctx.breadcrumb.join(' › ') || `${tag}${id ? '#' + id : ''}${classList[0] ? '.' + classList[0] : ''}`}</p>
-        </div>
-        <div class="panel-body">
-          ${sourceSection}
-          <div class="section">
-            <p class="section-title">元素信息</p>
-            <div class="row"><span class="row-key">标签</span><span class="row-val">&lt;${tag}&gt;</span></div>
-            ${id ? `<div class="row"><span class="row-key">ID</span><span class="row-val">#${id}</span></div>` : ''}
-            ${classList.length ? `<div class="row"><span class="row-key">Class</span><span class="row-val">.${classList.slice(0, 3).join(' .')}</span></div>` : ''}
+        <div class="ip-header">
+          <div class="ip-badge">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+            ${badgeLabel}
           </div>
-          ${styleRows ? `<div class="section"><p class="section-title">计算样式</p>${styleRows}</div>` : ''}
-          ${propRows ? `<div class="section"><p class="section-title">Props</p>${propRows}</div>` : ''}
+          <div class="ip-name">${this.escapeHtml(componentName)}</div>
+          ${pathHtml}
         </div>
-        <div class="chat-area">
-          <div class="chat-messages">${messagesHtml}</div>
-          <div class="chat-input-row">
-            <textarea class="chat-input" placeholder="描述你想改什么..." rows="1"></textarea>
-            <div class="chat-buttons">
-              <button class="btn-suggest" data-action="suggest" title="建议">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1a5 5 0 00-2.83 9.13L6 12h4l.83-1.87A5 5 0 008 1z"/><line x1="6" y1="14" x2="10" y2="14"/><line x1="6.5" y1="16" x2="9.5" y2="16"/></svg>
-              </button>
-              <button class="btn-develop" data-action="develop" title="开发">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 5 1 8 4 11"/><polyline points="12 5 15 8 12 11"/><line x1="9" y1="3" x2="7" y2="13"/></svg>
-              </button>
+
+        <div class="ip-section">
+          <div class="ip-sec-title">尺寸</div>
+          <div class="ip-props">${renderProps(dimProps)}</div>
+        </div>
+
+        ${styleEntries.length ? `
+        <div class="ip-section">
+          <div class="ip-sec-title">样式</div>
+          <div class="ip-props">${renderProps(styleEntries)}</div>
+        </div>` : ''}
+
+        ${fontEntries.length ? `
+        <div class="ip-section">
+          <div class="ip-sec-title">字体</div>
+          <div class="ip-props">${renderProps(fontEntries)}</div>
+        </div>` : ''}
+
+        <div class="ip-chat">
+          <div class="ip-chat-title">评论</div>
+          ${messagesHtml ? `<div class="ip-chat-msgs">${messagesHtml}</div>` : ''}
+          <div class="ip-chat-input">
+            <textarea class="ip-textarea" placeholder="写评论或开发需求…"></textarea>
+            <div class="ip-chat-btns">
+              <button class="ip-btn-sm ghost" data-action="cancel">取消</button>
+              <button class="ip-btn-sm secondary" data-action="comment">评论</button>
+              <button class="ip-btn-sm primary" data-action="develop">开发</button>
             </div>
           </div>
         </div>
@@ -478,12 +462,24 @@ export class InspectPanel {
 
     this.bindEvents()
     this.scrollChatToBottom()
+
+    // Re-attach drag handle after every re-render
+    this.dragCleanup?.()
+    const header = this.shadow.querySelector<HTMLElement>('.ip-header')
+    if (header) this.dragCleanup = makePanelDraggable(header, this.host)
+  }
+
+  private colorToHex(color: string): string {
+    const m = color.match(/\d+/g)
+    if (!m || m.length < 3) return color
+    const hex = m.slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('')
+    return '#' + hex.toUpperCase()
   }
 
   private bindEvents(): void {
-    const sourceRow = this.shadow.querySelector('[data-action="open-vscode"]')
-    if (sourceRow && this.ctx?.fiber.sourceFile) {
-      sourceRow.addEventListener('click', () => {
+    const pathEl = this.shadow.querySelector('[data-action="open-vscode"]')
+    if (pathEl && this.ctx?.fiber.sourceFile) {
+      pathEl.addEventListener('click', () => {
         wsClient.send({
           type: 'vscode:open',
           file: this.ctx!.fiber.sourceFile!,
@@ -492,11 +488,13 @@ export class InspectPanel {
       })
     }
 
-    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.chat-input')
+    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
     textarea?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         this.sendDesignRequest('develop')
+      } else if (e.key === 'Escape') {
+        if (textarea) { textarea.value = ''; textarea.style.height = '' }
       }
     })
 
@@ -507,14 +505,35 @@ export class InspectPanel {
       }
     })
 
-    this.shadow.querySelector<HTMLButtonElement>('[data-action="suggest"]')
-      ?.addEventListener('click', () => this.sendDesignRequest('suggest'))
     this.shadow.querySelector<HTMLButtonElement>('[data-action="develop"]')
       ?.addEventListener('click', () => this.sendDesignRequest('develop'))
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="cancel"]')
+      ?.addEventListener('click', () => {
+        const ta = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
+        if (ta) { ta.value = ''; ta.style.height = '' }
+      })
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="comment"]')
+      ?.addEventListener('click', () => {
+        const ta = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
+        const text = ta?.value.trim()
+        if (!text || !this.ctx) return
+        const fiber = this.ctx.fiber
+        const sel = this.ctx.id ? `#${this.ctx.id}` : `${this.ctx.tag}${this.ctx.classList[0] ? '.' + this.ctx.classList[0] : ''}`
+        changeTracker.addComment({ selector: sel, componentName: fiber.componentName, text })
+        const stored = changeTracker.getComments()
+        const latest = stored[stored.length - 1]
+        const targetEl = document.querySelector(sel)
+        if (targetEl && latest) {
+          this.commentBubbles.push(new CommentBubble(latest.id, text, targetEl))
+        }
+        if (ta) { ta.value = ''; ta.style.height = '' }
+      })
   }
 
   private sendDesignRequest(action: 'suggest' | 'develop'): void {
-    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.chat-input')
+    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
     const text = textarea?.value.trim()
     if (!text || this.pendingRequestId) return
 
@@ -561,15 +580,13 @@ export class InspectPanel {
   }
 
   private scrollChatToBottom(): void {
-    const chatMsgs = this.shadow.querySelector('.chat-messages')
+    const chatMsgs = this.shadow.querySelector('.ip-chat-msgs')
     if (chatMsgs) chatMsgs.scrollTop = chatMsgs.scrollHeight
   }
 
   private setButtonsDisabled(disabled: boolean): void {
-    const suggest = this.shadow.querySelector<HTMLButtonElement>('.btn-suggest')
-    const develop = this.shadow.querySelector<HTMLButtonElement>('.btn-develop')
-    if (suggest) suggest.disabled = disabled
-    if (develop) develop.disabled = disabled
+    const btns = this.shadow.querySelectorAll<HTMLButtonElement>('[data-action="develop"],[data-action="comment"]')
+    btns.forEach((btn) => { btn.disabled = disabled })
   }
 
   private escapeHtml(text: string): string {
@@ -620,7 +637,9 @@ export class InspectMode {
     const target = e.target as Element
     if (!target || target.getAttribute('data-design-easily')) return
 
-    positionHighlight(this.highlight, target)
+    const fiber = extractFiberInfo(target)
+    const name = fiber.componentName ?? target.tagName.toLowerCase()
+    positionHighlight(this.highlight, target, name)
   }
 
   private onClick = (e: MouseEvent): void => {
