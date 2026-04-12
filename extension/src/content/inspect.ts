@@ -67,9 +67,11 @@ function positionHighlight(el: HTMLElement, target: Element, componentName?: str
     })
     el.appendChild(label)
   }
-  const name = componentName ?? (target as HTMLElement).tagName?.toLowerCase()
-  if (name) {
-    label.textContent = name
+  const tag = target.tagName.toLowerCase()
+  const cls = (target as HTMLElement).classList[0]
+  const labelText = cls ? `<${tag}>.${cls}` : `<${tag}>`
+  if (labelText) {
+    label.textContent = labelText
     label.style.display = 'block'
     // If element is near top of viewport, show label below instead of above
     if (rect.top < 26) {
