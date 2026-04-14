@@ -3,39 +3,57 @@
  * Frosted glass Apple-style UI.
  */
 
-import { extractFiberInfo, getComponentBreadcrumb, type FiberInfo } from './fiber'
+import { extractFiberInfo, getDegradedInfo, getComponentBreadcrumb, type FiberInfo } from './fiber'
 import { wsClient } from './ws'
 import { requestHistory } from './requestHistory.js'
-import { changeTracker } from './changes.js'
-import { CommentBubble } from './comment.js'
+import { ACCENT, ACCENT_HOVER, ACCENT_RGB } from './tokens.js'
 import { makePanelDraggable } from './draggable.js'
 
-// ─── Highlight overlay ────────────────────────────────────────────────────────
+// ─── VS Code integration ──────────────────────────────────────────────────────
 
-const HIGHLIGHT_ID = 'de-highlight-overlay'
+function openInVSCode(file: string, line: number): void {
+  const a = document.createElement('a')
+  a.href = `vscode://file${file}:${line}`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
 
-function getOrCreateHighlight(): HTMLElement {
-  let el = document.getElementById(HIGHLIGHT_ID)
-  if (!el) {
-    el = document.createElement('div')
-    el.id = HIGHLIGHT_ID
-    Object.assign(el.style, {
-      position: 'fixed',
-      pointerEvents: 'none',
-      zIndex: '2147483640',
-      border: '2px solid #8B5CF6',
-      borderRadius: '4px',
-      background: 'rgba(139, 92, 246, 0.06)',
-      transition: 'all 0.08s ease',
-      display: 'none',
-      boxSizing: 'border-box',
-    })
-    document.body.appendChild(el)
-  }
+// ─── Highlight overlays ───────────────────────────────────────────────────────
+
+const HOVER_HIGHLIGHT_ID    = 'de-highlight-hover'
+const SELECTED_HIGHLIGHT_ID = 'de-highlight-selected'
+
+// Purple for hover, rose for selected
+const HOVER_COLOR    = ACCENT          // #8B5CF6
+const HOVER_RGB      = ACCENT_RGB      // 139, 92, 246
+const SELECTED_COLOR = '#FEAEF9'
+const SELECTED_RGB   = '254, 174, 249'
+
+function createHighlightEl(id: string, color: string, rgb: string): HTMLElement {
+  const el = document.createElement('div')
+  el.id = id
+  el.dataset['designEasily'] = 'highlight'
+  Object.assign(el.style, {
+    position: 'fixed',
+    pointerEvents: 'none',
+    zIndex: '2147483640',
+    border: `2px solid ${color}`,
+    borderRadius: '4px',
+    background: `rgba(${rgb}, 0.06)`,
+    transition: 'all 0.08s ease',
+    display: 'none',
+    boxSizing: 'border-box',
+  })
+  document.body.appendChild(el)
   return el
 }
 
-function positionHighlight(el: HTMLElement, target: Element, componentName?: string): void {
+function getOrCreateHighlight(id: string, color: string, rgb: string): HTMLElement {
+  return document.getElementById(id) ?? createHighlightEl(id, color, rgb)
+}
+
+function positionHighlight(el: HTMLElement, target: Element, color: string, componentName?: string): void {
   const rect = target.getBoundingClientRect()
   Object.assign(el.style, {
     display: 'block',
@@ -53,7 +71,6 @@ function positionHighlight(el: HTMLElement, target: Element, componentName?: str
     Object.assign(label.style, {
       position: 'absolute',
       left: '-1px',
-      background: '#8B5CF6',
       color: 'white',
       fontSize: '10px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro", monospace',
@@ -67,29 +84,26 @@ function positionHighlight(el: HTMLElement, target: Element, componentName?: str
     })
     el.appendChild(label)
   }
+  label.style.background = color
+
   const tag = target.tagName.toLowerCase()
   const cls = (target as HTMLElement).classList[0]
   const labelText = cls ? `<${tag}>.${cls}` : `<${tag}>`
-  if (labelText) {
-    label.textContent = labelText
-    label.style.display = 'block'
-    // If element is near top of viewport, show label below instead of above
-    if (rect.top < 26) {
-      label.style.top = '100%'
-      label.style.bottom = ''
-      label.style.borderRadius = '0 4px 4px 4px'
-    } else {
-      label.style.bottom = '100%'
-      label.style.top = ''
-      label.style.borderRadius = '4px 4px 4px 0'
-    }
+  label.textContent = labelText
+  label.style.display = 'block'
+  if (rect.top < 26) {
+    label.style.top = '100%'
+    label.style.bottom = ''
+    label.style.borderRadius = '0 4px 4px 4px'
   } else {
-    label.style.display = 'none'
+    label.style.bottom = '100%'
+    label.style.top = ''
+    label.style.borderRadius = '4px 4px 4px 0'
   }
 }
 
-function hideHighlight(): void {
-  const el = document.getElementById(HIGHLIGHT_ID)
+function hideEl(id: string): void {
+  const el = document.getElementById(id)
   if (el) el.style.display = 'none'
 }
 
@@ -218,9 +232,9 @@ const PANEL_STYLES = `
   }
   .ip-btn:hover { background: rgba(255,255,255,0.1); }
   .ip-btn.dark {
-    background: rgba(255,255,255,0.9); border-color: transparent; color: #1c1c1e;
+    background: ${ACCENT}; border-color: transparent; color: white;
   }
-  .ip-btn.dark:hover { background: white; }
+  .ip-btn.dark:hover { background: ${ACCENT_HOVER}; }
   .ip-chat { padding: 8px 12px 12px; }
   .ip-chat-title {
     font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3);
@@ -248,7 +262,9 @@ const PANEL_STYLES = `
   .ip-btn-sm.secondary {
     background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); border: none;
   }
-  .ip-btn-sm.primary { background: #007AFF; color: white; border: none; }
+  .ip-btn-sm.green { background: ${ACCENT}; color: white; border: none; }
+  .ip-btn-sm.green:hover { opacity: 1; background: ${ACCENT_HOVER}; }
+  .ip-btn-sm.primary { background: ${ACCENT}; color: white; border: none; }
   .ip-btn-sm:disabled { opacity: 0.35; cursor: not-allowed; }
   .ip-textarea {
     width: 100%; border-radius: 6px; border: 1.5px solid rgba(255,255,255,0.12);
@@ -260,11 +276,11 @@ const PANEL_STYLES = `
   .ip-textarea:focus { border-color: rgba(255,255,255,0.25); background: rgba(255,255,255,0.1); }
   .ip-send {
     width: 28px; height: 28px; border-radius: 6px;
-    background: rgba(255,255,255,0.9); border: none; cursor: pointer;
+    background: ${ACCENT}; border: none; cursor: pointer;
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     transition: background 0.12s;
   }
-  .ip-send:hover { background: white; }
+  .ip-send:hover { background: ${ACCENT_HOVER}; }
   .ip-send:disabled { opacity: 0.3; cursor: not-allowed; }
   .source-row {
     display: flex;
@@ -285,19 +301,111 @@ const PANEL_STYLES = `
     flex: 1;
     overflow: hidden;
   }
+
+  /* ── Task state styles ── */
+  .ip-task-header {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ip-task-title {
+    font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.7);
+    letter-spacing: 0.02em;
+  }
+  .ip-task-cancel {
+    padding: 3px 9px; border-radius: 5px; font-size: 10px; cursor: pointer;
+    font-family: inherit; background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.45);
+    transition: all 0.12s;
+  }
+  .ip-task-cancel:hover { background: rgba(255,80,80,0.15); border-color: rgba(255,80,80,0.3); color: #FF6B6B; }
+  .ip-task-snapshot {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .ip-task-elem {
+    font-size: 10px; font-family: "SF Mono","Menlo",monospace;
+    color: rgba(255,255,255,0.35); margin-bottom: 5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ip-task-msg {
+    font-size: 12px; color: rgba(255,255,255,0.8); line-height: 1.45;
+    word-break: break-word;
+  }
+  .ip-task-status {
+    padding: 16px 12px;
+    display: flex; align-items: center; gap: 10px;
+    color: rgba(255,255,255,0.5); font-size: 12px;
+  }
+  .ip-spinner {
+    width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.12);
+    border-top-color: rgba(255,255,255,0.55);
+    animation: de-spin 0.8s linear infinite;
+  }
+  @keyframes de-spin { to { transform: rotate(360deg); } }
+
+  .ip-result-body { padding: 12px; }
+  .ip-result-icon { font-size: 18px; margin-bottom: 6px; }
+  .ip-result-summary {
+    font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.45;
+    margin-bottom: 10px; word-break: break-word;
+  }
+  .ip-result-files { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+  .ip-result-file {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 5px; cursor: pointer;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07);
+    transition: background 0.1s; text-decoration: none;
+    font-size: 10px; font-family: "SF Mono","Menlo",monospace;
+    color: rgba(255,255,255,0.6);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ip-result-file:hover { background: rgba(255,255,255,0.1); color: #4DA3FF; }
+  .ip-result-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+  .ip-error-body { padding: 12px; }
+  .ip-error-icon { font-size: 18px; margin-bottom: 6px; }
+  .ip-error-msg {
+    font-size: 12px; color: rgba(255,100,100,0.85); line-height: 1.45;
+    margin-bottom: 12px; word-break: break-word;
+  }
+  .ip-error-actions { display: flex; gap: 6px; justify-content: flex-end; }
 `
+
+// ─── Panel state machine ──────────────────────────────────────────────────────
+
+type PanelState = 'inspect' | 'running' | 'success' | 'no-changes' | 'error'
+
+interface TaskSnapshot {
+  elementLabel: string
+  sourceFile: string | null
+  sourceLine: number | null
+  userMessage: string
+  element: Record<string, unknown>
+}
 
 export class InspectPanel {
   private host: HTMLElement
   private shadow: ShadowRoot
+
+  // inspect state
   private ctx: ElementContext | null = null
-  private messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
-  private pendingRequestId: string | null = null
-  private pendingAction: 'suggest' | 'develop' | null = null
-  private pendingUserMessage: string | null = null
+  private anchorEl: Element | null = null
+  private resolvedSource: { file: string; line: number } | null = null
+  private sourceLookupPending = false
+  private lookupEpoch = 0
+  // state machine
+  private state: PanelState = 'inspect'
+  private runningStatus: 'analyzing' | 'editing' = 'analyzing'
+  private taskId: string | null = null
+  private taskSnapshot: TaskSnapshot | null = null
+  private taskResult: { summary: string; changedFiles: string[] } | null = null
+  private taskError: string | null = null
+
   private wsUnsubscribe: (() => void) | null = null
-  private commentBubbles: CommentBubble[] = []
   private dragCleanup: (() => void) | null = null
+  private readonly onTaskEndCallbacks: Array<() => void> = []
 
   constructor() {
     this.host = document.createElement('div')
@@ -309,70 +417,142 @@ export class InspectPanel {
 
     this.wsUnsubscribe = wsClient.onMessage((msg) => {
       if (msg.type === 'design:queued') {
-        this.pendingRequestId = msg.id
-        this.updateLastAssistantMessage('⏳ 已发送，等待 Claude Code...')
-        if (this.pendingAction !== null && this.pendingUserMessage !== null) {
-          requestHistory.add({
-            id: msg.id,
-            action: this.pendingAction,
-            userMessage: this.pendingUserMessage,
-            status: 'pending',
-          })
-          this.pendingAction = null
-          this.pendingUserMessage = null
+        this.taskId = msg.id
+        this.state = 'running'
+        requestHistory.add({
+          id: msg.id,
+          action: 'develop',
+          userMessage: this.taskSnapshot?.userMessage ?? '',
+          status: 'analyzing',
+        })
+        this.renderPanel()
+      }
+      if (msg.type === 'design:processing' && msg.id === this.taskId) {
+        if (msg.status === 'editing' && this.runningStatus !== 'editing') {
+          this.runningStatus = 'editing'
+          this.renderPanel()
         }
       }
-      if (msg.type === 'design:processing') {
-        if (msg.id !== this.pendingRequestId) return
-        this.updateLastAssistantMessage('⚙️ Claude Code 处理中...')
+      if (msg.type === 'design:done' && msg.id === this.taskId) {
+        this.state = msg.noChanges ? 'no-changes' : 'success'
+        this.runningStatus = 'analyzing'
+        this.taskResult = {
+          summary: msg.summary ?? '修改完成',
+          changedFiles: msg.changedFiles ?? [],
+        }
+        requestHistory.update(msg.id, { status: 'completed', summary: msg.summary, changedFiles: msg.changedFiles })
+        this.taskId = null
+        this.renderPanel()
       }
-      if (msg.type === 'design:done') {
-        if (msg.id !== this.pendingRequestId) return
-        const text = msg.action === 'suggest'
-          ? (msg.content ?? '(未返回内容)')
-          : `✅ 已修改：${(msg.changedFiles ?? []).join(', ') || (msg.summary ?? '完成')}`
-        this.updateLastAssistantMessage(text)
-        this.pendingRequestId = null
-        this.setButtonsDisabled(false)
-      }
-      if (msg.type === 'design:failed') {
-        if (msg.id !== this.pendingRequestId) return
-        this.updateLastAssistantMessage(`❌ 失败：${msg.error}`)
-        this.pendingRequestId = null
-        this.setButtonsDisabled(false)
+      if (msg.type === 'design:failed' && msg.id === this.taskId) {
+        this.state = 'error'
+        this.runningStatus = 'analyzing'
+        this.taskError = msg.error
+        requestHistory.update(msg.id, { status: 'failed', error: msg.error })
+        this.taskId = null
+        this.renderPanel()
       }
     })
   }
 
-  show(ctx: ElementContext): void {
-    this.ctx = ctx
+  isLocked(): boolean {
+    return this.state === 'running'
+  }
+
+  /** True when a task is in-progress, completed, or errored (panel should persist across mode switches) */
+  hasTask(): boolean {
+    return this.state === 'running' || this.state === 'success' || this.state === 'no-changes' || this.state === 'error'
+  }
+
+  /** Show the host element without resetting state (used when re-entering inspect mode) */
+  showHost(): void {
     this.host.style.display = ''
+  }
+
+  /** Register a callback fired when the user dismisses a task (继续审查 / 返回) */
+  onTaskEnd(cb: () => void): void {
+    this.onTaskEndCallbacks.push(cb)
+  }
+
+  private notifyTaskEnd(): void {
+    this.onTaskEndCallbacks.forEach((cb) => cb())
+  }
+
+  show(ctx: ElementContext, anchorEl: Element): void {
+    this.ctx = ctx
+    this.anchorEl = anchorEl
+    this.resolvedSource = null
+    this.sourceLookupPending = false
+    this.state = 'inspect'
+    this.taskSnapshot = null
+    this.taskResult = null
+    this.taskError = null
+    this.host.style.display = ''
+    if (!ctx.fiber.sourceFile && anchorEl) {
+      this.lookupEpoch++
+      this.sourceLookupPending = true
+      this.startSourceLookup(anchorEl, this.lookupEpoch)
+    }
     this.renderPanel()
+  }
+
+  private startSourceLookup(el: Element, epoch: number): void {
+    import('./source-locator.js')
+      .then(({ resolveComponentSource }) => resolveComponentSource(el))
+      .then((loc) => {
+        if (epoch !== this.lookupEpoch) return  // stale lookup — element changed while we were waiting
+        this.sourceLookupPending = false
+        if (!this.ctx) return
+        if (loc) this.resolvedSource = { file: loc.file, line: loc.line }
+        if (this.state === 'inspect') this.renderPanel()
+      })
+      .catch((err) => {
+        if (epoch !== this.lookupEpoch) return
+        this.sourceLookupPending = false
+        console.warn('[DE inspect] source lookup failed:', err)
+      })
   }
 
   hide(): void {
     this.host.style.display = 'none'
     this.ctx = null
+    this.anchorEl = null
   }
 
   private renderPanel(): void {
+    switch (this.state) {
+      case 'running':    return this.renderRunning()
+      case 'success':    return this.renderSuccess()
+      case 'no-changes': return this.renderNoChanges()
+      case 'error':      return this.renderError()
+      default:           return this.renderInspect()
+    }
+  }
+
+  // ── inspect state ────────────────────────────────────────────────────────────
+
+  private renderInspect(): void {
     const ctx = this.ctx!
     const { fiber, tag, id, classList, computedStyles, rect } = ctx
 
     const componentName = fiber.componentName ?? tag
-    const sourceFile = fiber.sourceFile
-    const sourceLine = fiber.sourceLine
+    const sourceFile = fiber.sourceFile ?? this.resolvedSource?.file ?? null
+    const sourceLine = fiber.sourceLine ?? this.resolvedSource?.line ?? null
     const shortFile = sourceFile ? sourceFile.split('/').slice(-2).join('/') : null
-
-    // Badge label: prefer component tag type, fallback to element tag
     const badgeLabel = fiber.componentName ? tag : tag.toUpperCase()
 
-    // Header path
-    const pathHtml = shortFile
-      ? `<div class="ip-path" data-action="open-vscode" title="在 VS Code 中打开">${shortFile}:${sourceLine}</div>`
-      : `<div class="ip-path" style="cursor:default;color:rgba(255,255,255,0.2)">未检测到源码（需 React 开发模式）</div>`
+    let pathHtml: string
+    if (shortFile) {
+      pathHtml = `<div class="ip-path" data-action="open-vscode" title="在 VS Code 中打开">${shortFile}:${sourceLine}</div>`
+    } else if (this.sourceLookupPending) {
+      pathHtml = `<div class="ip-path" style="cursor:default;color:rgba(255,255,255,0.3)">⏳ 定位中…</div>`
+    } else {
+      const deg = this.anchorEl ? getDegradedInfo(this.anchorEl) : null
+      const domPath = deg?.domPath ?? `${tag}${classList[0] ? '.' + classList[0] : ''}`
+      const testId = deg?.dataTestId ? ` · testid:${deg.dataTestId}` : ''
+      pathHtml = `<div class="ip-path" style="cursor:default;color:rgba(255,255,255,0.25);margin-top:2px">${this.escapeHtml(domPath)}${testId}</div>`
+    }
 
-    // 尺寸 section
     const w = Math.round(rect.width)
     const h = Math.round(rect.height)
     const x = Math.round(rect.left)
@@ -382,7 +562,6 @@ export class InspectPanel {
       { k: 'X', v: `${x}` }, { k: 'Y', v: `${y}` },
     ]
 
-    // 样式 section: bg, radius, padding, shadow
     const styleEntries: Array<{ k: string; v: string; color?: string }> = []
     const bg = computedStyles['backgroundColor'] ?? ''
     if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
@@ -395,7 +574,6 @@ export class InspectPanel {
     const shadow = computedStyles['boxShadow']
     if (shadow && shadow !== 'none') styleEntries.push({ k: '阴影', v: shadow.slice(0, 20) + '…' })
 
-    // 字体 section
     const fontEntries: Array<{ k: string; v: string; color?: string }> = []
     const ff = computedStyles['fontFamily']
     if (ff) fontEntries.push({ k: '字体', v: ff.split(',')[0].replace(/['"]/g, '').trim() })
@@ -413,10 +591,6 @@ export class InspectPanel {
           <span class="ip-prop-k">${k}</span>
           <span class="ip-prop-v">${this.escapeHtml(v)}</span>
         </div>`).join('')
-
-    const messagesHtml = this.messages.map((m) =>
-      `<div class="msg ${m.role}">${this.escapeHtml(m.content)}</div>`
-    ).join('')
 
     this.shadow.innerHTML = `
       <style>${PANEL_STYLES}</style>
@@ -448,13 +622,10 @@ export class InspectPanel {
         </div>` : ''}
 
         <div class="ip-chat">
-          <div class="ip-chat-title">评论</div>
-          ${messagesHtml ? `<div class="ip-chat-msgs">${messagesHtml}</div>` : ''}
           <div class="ip-chat-input">
-            <textarea class="ip-textarea" placeholder="写评论或开发需求…"></textarea>
+            <textarea class="ip-textarea" placeholder="写开发需求…"></textarea>
             <div class="ip-chat-btns">
-              <button class="ip-btn-sm ghost" data-action="cancel">取消</button>
-              <button class="ip-btn-sm secondary" data-action="comment">评论</button>
+              <button class="ip-btn-sm ghost" data-action="cancel-text">取消</button>
               <button class="ip-btn-sm primary" data-action="develop">开发</button>
             </div>
           </div>
@@ -462,13 +633,259 @@ export class InspectPanel {
       </div>
     `
 
-    this.bindEvents()
-    this.scrollChatToBottom()
-
-    // Re-attach drag handle after every re-render
+    this.bindInspectEvents(sourceFile, sourceLine)
     this.dragCleanup?.()
     const header = this.shadow.querySelector<HTMLElement>('.ip-header')
     if (header) this.dragCleanup = makePanelDraggable(header, this.host)
+  }
+
+  // ── running state ────────────────────────────────────────────────────────────
+
+  private renderRunning(): void {
+    const snap = this.taskSnapshot!
+    this.shadow.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="ip-task-header">
+          <span class="ip-task-title">开发任务</span>
+          <button class="ip-task-cancel" data-action="task-cancel">✕ 取消</button>
+        </div>
+        <div class="ip-task-snapshot">
+          <div class="ip-task-elem">${this.escapeHtml(snap.elementLabel)}</div>
+          <div class="ip-task-msg">${this.escapeHtml(snap.userMessage)}</div>
+        </div>
+        <div class="ip-task-status">
+          <div class="ip-spinner"></div>
+          <span>${this.runningStatus === 'editing' ? '修改文件中…' : '分析代码中…'}</span>
+        </div>
+      </div>
+    `
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="task-cancel"]')
+      ?.addEventListener('click', () => {
+        if (this.taskId) {
+          wsClient.send({ type: 'design:cancel', id: this.taskId })
+          this.taskId = null
+        }
+        this.state = 'inspect'
+        this.runningStatus = 'analyzing'
+        this.taskSnapshot = null
+        this.renderPanel()
+      })
+  }
+
+  // ── success state ─────────────────────────────────────────────────────────────
+
+  private renderSuccess(): void {
+    const snap = this.taskSnapshot!
+    const result = this.taskResult!
+    const filesHtml = result.changedFiles.length
+      ? result.changedFiles.map((f) => {
+          const short = f.split('/').slice(-2).join('/')
+          return `<div class="ip-result-file" data-file="${this.escapeHtml(f)}">📄 ${this.escapeHtml(short)}</div>`
+        }).join('')
+      : ''
+
+    this.shadow.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="ip-task-header">
+          <span class="ip-task-title">开发完成</span>
+        </div>
+        <div class="ip-task-snapshot">
+          <div class="ip-task-elem">${this.escapeHtml(snap.elementLabel)}</div>
+          <div class="ip-task-msg">${this.escapeHtml(snap.userMessage)}</div>
+        </div>
+        <div class="ip-result-body">
+          <div class="ip-result-icon">✅</div>
+          <div class="ip-result-summary">${this.escapeHtml(result.summary)}</div>
+          ${filesHtml ? `<div class="ip-result-files">${filesHtml}</div>` : ''}
+          <div class="ip-result-actions">
+            <button class="ip-btn-sm ghost" data-action="resume-inspect">继续审查</button>
+          </div>
+        </div>
+      </div>
+    `
+
+    // Click file → open in VS Code
+    this.shadow.querySelectorAll<HTMLElement>('[data-file]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const file = el.getAttribute('data-file')
+        if (file) openInVSCode(file, 1)
+      })
+    })
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="resume-inspect"]')
+      ?.addEventListener('click', () => {
+        this.state = 'inspect'
+        this.taskSnapshot = null
+        this.taskResult = null
+        this.notifyTaskEnd()
+        if (this.ctx && this.anchorEl) {
+          this.renderPanel()
+        } else {
+          this.hide()
+        }
+      })
+  }
+
+  // ── no-changes state ─────────────────────────────────────────────────────────
+
+  private renderNoChanges(): void {
+    const snap = this.taskSnapshot!
+    const result = this.taskResult!
+
+    this.shadow.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="ip-task-header">
+          <span class="ip-task-title">未修改文件</span>
+        </div>
+        <div class="ip-task-snapshot">
+          <div class="ip-task-elem">${this.escapeHtml(snap.elementLabel)}</div>
+          <div class="ip-task-msg">${this.escapeHtml(snap.userMessage)}</div>
+        </div>
+        <div class="ip-result-body">
+          <div class="ip-result-icon">⚠️</div>
+          <div class="ip-result-summary">${this.escapeHtml(result.summary)}</div>
+          <div class="ip-result-actions">
+            <button class="ip-btn-sm ghost" data-action="resume-inspect">继续审查</button>
+          </div>
+        </div>
+      </div>
+    `
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="resume-inspect"]')
+      ?.addEventListener('click', () => {
+        this.state = 'inspect'
+        this.taskSnapshot = null
+        this.taskResult = null
+        this.notifyTaskEnd()
+        if (this.ctx && this.anchorEl) {
+          this.renderPanel()
+        } else {
+          this.hide()
+        }
+      })
+  }
+
+  // ── error state ───────────────────────────────────────────────────────────────
+
+  private renderError(): void {
+    const snap = this.taskSnapshot
+    this.shadow.innerHTML = `
+      <style>${PANEL_STYLES}</style>
+      <div class="panel">
+        <div class="ip-task-header">
+          <span class="ip-task-title">开发失败</span>
+        </div>
+        ${snap ? `
+        <div class="ip-task-snapshot">
+          <div class="ip-task-elem">${this.escapeHtml(snap.elementLabel)}</div>
+          <div class="ip-task-msg">${this.escapeHtml(snap.userMessage)}</div>
+        </div>` : ''}
+        <div class="ip-error-body">
+          <div class="ip-error-icon">❌</div>
+          <div class="ip-error-msg">${this.escapeHtml(this.taskError ?? '未知错误')}</div>
+          <div class="ip-error-actions">
+            <button class="ip-btn-sm ghost" data-action="resume-inspect">返回</button>
+            ${snap ? `<button class="ip-btn-sm primary" data-action="retry">重试</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="resume-inspect"]')
+      ?.addEventListener('click', () => {
+        this.state = 'inspect'
+        this.taskSnapshot = null
+        this.taskError = null
+        this.notifyTaskEnd()
+        if (this.ctx && this.anchorEl) {
+          this.renderPanel()
+        } else {
+          this.hide()
+        }
+      })
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="retry"]')
+      ?.addEventListener('click', () => {
+        if (!snap) return
+        this.state = 'inspect'
+        this.taskError = null
+        this.sendDevelopRequest(snap.userMessage, snap.element)
+      })
+  }
+
+  // ── shared helpers ────────────────────────────────────────────────────────────
+
+  private bindInspectEvents(sourceFile: string | null, sourceLine: number | null): void {
+    const pathEl = this.shadow.querySelector('[data-action="open-vscode"]')
+    if (pathEl && sourceFile) {
+      pathEl.addEventListener('click', () => openInVSCode(sourceFile, sourceLine ?? 1))
+    }
+
+    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
+    textarea?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        this.triggerDevelop()
+      } else if (e.key === 'Escape') {
+        if (textarea) { textarea.value = ''; textarea.style.height = '' }
+      }
+    })
+    textarea?.addEventListener('input', () => {
+      if (textarea) {
+        textarea.style.height = 'auto'
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 80)}px`
+      }
+    })
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="develop"]')
+      ?.addEventListener('click', () => this.triggerDevelop())
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="cancel-text"]')
+      ?.addEventListener('click', () => {
+        const ta = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
+        if (ta) { ta.value = ''; ta.style.height = '' }
+      })
+
+  }
+
+  private triggerDevelop(): void {
+    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
+    const text = textarea?.value.trim()
+    if (!text || !this.ctx) return
+    if (textarea) textarea.value = ''
+
+    const { tag, id, classList, computedStyles, textContent, fiber } = this.ctx
+    const element = {
+      tag, id, classList, textContent, computedStyles,
+      sourceFile: fiber.sourceFile,
+      sourceLine: fiber.sourceLine,
+    }
+    this.sendDevelopRequest(text, element)
+  }
+
+  private sendDevelopRequest(userMessage: string, element: Record<string, unknown>): void {
+    const sourceFile = (element['sourceFile'] as string | undefined) ?? this.resolvedSource?.file ?? null
+    const sourceLine = (element['sourceLine'] as number | undefined) ?? this.resolvedSource?.line ?? null
+    const tag = element['tag'] as string
+    const classList = element['classList'] as string[]
+
+    const elementLabel = sourceFile
+      ? `${tag}${classList[0] ? '.' + classList[0] : ''} · ${sourceFile.split('/').slice(-1)[0]}${sourceLine ? ':' + sourceLine : ''}`
+      : `${tag}${classList[0] ? '.' + classList[0] : ''}`
+
+    this.taskSnapshot = { elementLabel, sourceFile, sourceLine, userMessage, element }
+
+    const { computedStyles: _dropped, ...trimmedElement } = element as Record<string, unknown> & { computedStyles?: unknown }
+    wsClient.send({
+      type: 'design:request',
+      action: 'develop',
+      userMessage,
+      element: trimmedElement,
+      pageUrl: window.location.href,
+    })
   }
 
   private colorToHex(color: string): string {
@@ -478,122 +895,9 @@ export class InspectPanel {
     return '#' + hex.toUpperCase()
   }
 
-  private bindEvents(): void {
-    const pathEl = this.shadow.querySelector('[data-action="open-vscode"]')
-    if (pathEl && this.ctx?.fiber.sourceFile) {
-      pathEl.addEventListener('click', () => {
-        wsClient.send({
-          type: 'vscode:open',
-          file: this.ctx!.fiber.sourceFile!,
-          line: this.ctx!.fiber.sourceLine ?? 1,
-        })
-      })
-    }
-
-    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
-    textarea?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        this.sendDesignRequest('develop')
-      } else if (e.key === 'Escape') {
-        if (textarea) { textarea.value = ''; textarea.style.height = '' }
-      }
-    })
-
-    textarea?.addEventListener('input', () => {
-      if (textarea) {
-        textarea.style.height = 'auto'
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 80)}px`
-      }
-    })
-
-    this.shadow.querySelector<HTMLButtonElement>('[data-action="develop"]')
-      ?.addEventListener('click', () => this.sendDesignRequest('develop'))
-
-    this.shadow.querySelector<HTMLButtonElement>('[data-action="cancel"]')
-      ?.addEventListener('click', () => {
-        const ta = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
-        if (ta) { ta.value = ''; ta.style.height = '' }
-      })
-
-    this.shadow.querySelector<HTMLButtonElement>('[data-action="comment"]')
-      ?.addEventListener('click', () => {
-        const ta = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
-        const text = ta?.value.trim()
-        if (!text || !this.ctx) return
-        const fiber = this.ctx.fiber
-        const sel = this.ctx.id ? `#${this.ctx.id}` : `${this.ctx.tag}${this.ctx.classList[0] ? '.' + this.ctx.classList[0] : ''}`
-        changeTracker.addComment({ selector: sel, componentName: fiber.componentName, text })
-        const stored = changeTracker.getComments()
-        const latest = stored[stored.length - 1]
-        const targetEl = document.querySelector(sel)
-        if (targetEl && latest) {
-          const index = stored.length
-          this.commentBubbles.push(new CommentBubble(latest.id, text, targetEl, index))
-        }
-        if (ta) { ta.value = ''; ta.style.height = '' }
-      })
-  }
-
-  private sendDesignRequest(action: 'suggest' | 'develop'): void {
-    const textarea = this.shadow.querySelector<HTMLTextAreaElement>('.ip-textarea')
-    const text = textarea?.value.trim()
-    if (!text || this.pendingRequestId) return
-
-    this.pendingAction = action
-    this.pendingUserMessage = text
-
-    this.addMessage('user', text)
-    if (textarea) textarea.value = ''
-
-    this.addMessage('assistant', '⏳ 发送中...')
-    this.setButtonsDisabled(true)
-
-    const { tag, id, classList, computedStyles, textContent, fiber } = this.ctx!
-    wsClient.send({
-      type: 'design:request',
-      action,
-      userMessage: text,
-      element: {
-        tag,
-        id,
-        classList,
-        textContent,
-        computedStyles,
-        sourceFile: fiber.sourceFile,
-        sourceLine: fiber.sourceLine,
-      },
-    })
-  }
-
-  private addMessage(role: 'user' | 'assistant', content: string): void {
-    this.messages.push({ role, content })
-    this.renderPanel()
-  }
-
-  private updateLastAssistantMessage(content: string): void {
-    const lastIdx = this.messages.length - 1
-    if (lastIdx >= 0 && this.messages[lastIdx].role === 'assistant') {
-      this.messages[lastIdx].content = content
-      const msgs = this.shadow.querySelectorAll('.msg.assistant')
-      const last = msgs[msgs.length - 1]
-      if (last) last.textContent = content
-      this.scrollChatToBottom()
-    }
-  }
-
-  private scrollChatToBottom(): void {
-    const chatMsgs = this.shadow.querySelector('.ip-chat-msgs')
-    if (chatMsgs) chatMsgs.scrollTop = chatMsgs.scrollHeight
-  }
-
-  private setButtonsDisabled(disabled: boolean): void {
-    const btns = this.shadow.querySelectorAll<HTMLButtonElement>('[data-action="develop"],[data-action="comment"]')
-    btns.forEach((btn) => { btn.disabled = disabled })
-  }
 
   private escapeHtml(text: string): string {
-    return text
+    return String(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -610,56 +914,89 @@ export class InspectPanel {
 
 export class InspectMode {
   private panel: InspectPanel
-  private highlight: HTMLElement
+  private readonly hoverHighlight: HTMLElement
+  private readonly selectedHighlight: HTMLElement
   private selectedEl: Element | null = null
   private active = false
+  private scrollRafId: number | null = null
 
   constructor() {
     this.panel = new InspectPanel()
-    this.highlight = getOrCreateHighlight()
+    this.hoverHighlight    = getOrCreateHighlight(HOVER_HIGHLIGHT_ID,    HOVER_COLOR,    HOVER_RGB)
+    this.selectedHighlight = getOrCreateHighlight(SELECTED_HIGHLIGHT_ID, SELECTED_COLOR, SELECTED_RGB)
+    this.panel.onTaskEnd(() => {
+      this.selectedEl = null
+      hideEl(SELECTED_HIGHLIGHT_ID)
+    })
   }
 
   enable(): void {
     this.active = true
     document.addEventListener('mouseover', this.onHover, true)
     document.addEventListener('click', this.onClick, true)
+    document.addEventListener('scroll', this.onScroll, { capture: true, passive: true })
     document.body.style.cursor = 'crosshair'
+    if (this.panel.hasTask()) {
+      this.panel.showHost()
+    }
   }
 
   disable(): void {
     this.active = false
     document.removeEventListener('mouseover', this.onHover, true)
     document.removeEventListener('click', this.onClick, true)
+    document.removeEventListener('scroll', this.onScroll, true)
+    if (this.scrollRafId !== null) {
+      cancelAnimationFrame(this.scrollRafId)
+      this.scrollRafId = null
+    }
     document.body.style.cursor = ''
-    hideHighlight()
-    this.panel.hide()
-    this.selectedEl = null
+    hideEl(HOVER_HIGHLIGHT_ID)
+    // Keep panel + selected highlight if a task is still running/done
+    if (!this.panel.hasTask()) {
+      this.panel.hide()
+      this.selectedEl = null
+      hideEl(SELECTED_HIGHLIGHT_ID)
+    }
+  }
+
+  private onScroll = (): void => {
+    if (this.scrollRafId !== null) return
+    this.scrollRafId = requestAnimationFrame(() => {
+      this.scrollRafId = null
+      if (this.selectedEl) {
+        positionHighlight(this.selectedHighlight, this.selectedEl, SELECTED_COLOR)
+      }
+    })
   }
 
   private onHover = (e: MouseEvent): void => {
-    const target = e.target as Element
-    if (!target || target.getAttribute('data-design-easily')) return
-
-    const fiber = extractFiberInfo(target)
-    const name = fiber.componentName ?? target.tagName.toLowerCase()
-    positionHighlight(this.highlight, target, name)
+    if (this.panel.isLocked()) return
+    const target = e.target as HTMLElement
+    if (!target || target.dataset['designEasily']) return
+    positionHighlight(this.hoverHighlight, target, HOVER_COLOR)
   }
 
   private onClick = (e: MouseEvent): void => {
-    const target = e.target as Element
-    if (!target || target.getAttribute('data-design-easily')) return
+    if (this.panel.isLocked()) return
+    const target = e.target as HTMLElement
+    if (!target || target.dataset['designEasily']) return
 
     e.preventDefault()
     e.stopPropagation()
 
     this.selectedEl = target
+    hideEl(HOVER_HIGHLIGHT_ID)
+    positionHighlight(this.selectedHighlight, target, SELECTED_COLOR)
+
     const ctx = buildContext(target)
-    this.panel.show(ctx)
+    this.panel.show(ctx, target)
   }
 
   destroy(): void {
     this.disable()
     this.panel.destroy()
-    this.highlight.remove()
+    this.hoverHighlight.remove()
+    this.selectedHighlight.remove()
   }
 }

@@ -4,5 +4,16 @@ dist/
 *.local
 .DS_Store
 
+# Extension build artifacts
+extension/dist.crx
+extension/dist.pem
+
+# Test coverage output
+coverage/
+
+# Brainstorm / superpowers temp files
+.superpowers/
+
 # Local Claude Code MCP config (machine-specific — copy from settings.local.example.json)
 .claude/settings.local.json
+.gstack/

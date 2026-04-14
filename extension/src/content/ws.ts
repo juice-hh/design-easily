@@ -10,19 +10,23 @@ type MessageHandler = (data: ServerMessage) => void
 
 export type ServerMessage =
   | { type: 'vscode:opened'; file: string; line: number }
+  | { type: 'file:content'; requestId: string; content: string; language: string; totalLines: number; truncated: boolean }
+  | { type: 'file:error'; requestId: string; error: string }
   | { type: 'ai:chunk'; text: string; requestId: string }
   | { type: 'ai:done'; requestId: string }
   | { type: 'ai:error'; error: string; requestId: string }
   | { type: 'design:queued'; id: string }
-  | { type: 'design:processing'; id: string }
-  | { type: 'design:done'; id: string; action?: 'suggest' | 'develop'; content?: string; summary?: string; changedFiles?: string[] }
+  | { type: 'design:processing'; id: string; status?: 'analyzing' | 'editing' }
+  | { type: 'design:done'; id: string; action?: 'suggest' | 'develop'; content?: string; summary?: string; changedFiles?: string[]; noChanges?: boolean }
   | { type: 'design:failed'; id: string; error: string }
   | { type: 'pong' }
 
 export type ClientMessage =
   | { type: 'vscode:open'; file: string; line: number }
+  | { type: 'file:read'; file: string; requestId: string }
   | { type: 'ai:chat'; requestId: string; messages: ChatMessage[]; model?: string }
-  | { type: 'design:request'; element: Record<string, unknown>; userMessage: string; action?: 'suggest' | 'develop' }
+  | { type: 'design:request'; element: Record<string, unknown> | null; userMessage: string; action?: 'suggest' | 'develop'; pageUrl?: string }
+  | { type: 'design:cancel'; id: string }
   | { type: 'ping' }
 
 export interface ChatMessage {
@@ -30,9 +34,12 @@ export interface ChatMessage {
   content: string
 }
 
+type StatusHandler = (connected: boolean) => void
+
 class WSClient {
   private ws: WebSocket | null = null
   private handlers = new Set<MessageHandler>()
+  private statusHandlers = new Set<StatusHandler>()
   private reconnectDelay = 1000
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private connected = false
@@ -46,6 +53,7 @@ class WSClient {
       this.ws.onopen = () => {
         this.connected = true
         this.reconnectDelay = 1000
+        this.statusHandlers.forEach((h) => h(true))
         this.send({ type: 'ping' })
       }
 
@@ -60,6 +68,7 @@ class WSClient {
 
       this.ws.onclose = () => {
         this.connected = false
+        this.statusHandlers.forEach((h) => h(false))
         this.scheduleReconnect()
       }
 
@@ -89,6 +98,11 @@ class WSClient {
   onMessage(handler: MessageHandler): () => void {
     this.handlers.add(handler)
     return () => this.handlers.delete(handler)
+  }
+
+  onStatusChange(handler: StatusHandler): () => void {
+    this.statusHandlers.add(handler)
+    return () => this.statusHandlers.delete(handler)
   }
 
   isConnected(): boolean {

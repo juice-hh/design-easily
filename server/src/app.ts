@@ -8,27 +8,32 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { createServer, type Server } from 'node:http'
 import { config } from './config.js'
 import { openInVSCode } from './vscode.js'
-import { readFileContext } from './fileReader.js'
+import { readFileContext, readFullFile } from './fileReader.js'
 import { streamAIResponse, type ChatMessage } from './ai.js'
 import { streamOpenAIResponse } from './openai.js'
 import { queue, type ElementContext } from './queue.js'
+import { runClaudeOnRequest } from './claude-runner.js'
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
 type ClientMessage =
   | { type: 'vscode:open'; file: string; line: number }
+  | { type: 'file:read'; file: string; requestId: string }
   | { type: 'ai:chat'; requestId: string; messages: ChatMessage[]; model?: string }
-  | { type: 'design:request'; element: ElementContext; userMessage: string; action?: 'suggest' | 'develop' }
+  | { type: 'design:request'; element: ElementContext | null; userMessage: string; action?: 'suggest' | 'develop'; pageUrl?: string }
+  | { type: 'design:cancel'; id: string }
   | { type: 'ping' }
 
 type ServerMessage =
   | { type: 'vscode:opened'; file: string; line: number }
+  | { type: 'file:content'; requestId: string; content: string; language: string; totalLines: number; truncated: boolean }
+  | { type: 'file:error'; requestId: string; error: string }
   | { type: 'ai:chunk'; text: string; requestId: string }
   | { type: 'ai:done'; requestId: string }
   | { type: 'ai:error'; error: string; requestId: string }
   | { type: 'design:queued'; id: string }
-  | { type: 'design:processing'; id: string }
-  | { type: 'design:done'; id: string; action?: 'suggest' | 'develop'; content?: string; summary?: string; changedFiles?: string[] }
+  | { type: 'design:processing'; id: string; status?: 'analyzing' | 'editing' }
+  | { type: 'design:done'; id: string; action?: 'suggest' | 'develop'; content?: string; summary?: string; changedFiles?: string[]; noChanges?: boolean }
   | { type: 'design:failed'; id: string; error: string }
   | { type: 'pong' }
 
@@ -60,12 +65,7 @@ export default function createApp(): AppInstance {
     const request = await queue.dequeue(timeoutMs)
 
     if (request) {
-      // Push design:processing to all connected WS clients
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'design:processing', id: request.id }))
-        }
-      })
+      broadcast({ type: 'design:processing', id: request.id })
     }
 
     res.json({ ok: true, request: request ?? null })
@@ -100,22 +100,20 @@ export default function createApp(): AppInstance {
     const changed = queue.complete(id!, { status, summary, changedFiles, error, content })
 
     if (changed) {
-      const event = status === 'completed'
-        ? {
-            type: 'design:done',
-            id,
-            action: existing.action,
-            content: existing.content,
-            summary: existing.summary ?? '',
-            changedFiles: existing.changedFiles ?? [],
-          }
-        : { type: 'design:failed', id, error: error ?? '' }
-
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(event))
-        }
-      })
+      if (status === 'completed') {
+        const files = existing.changedFiles ?? []
+        broadcast({
+          type: 'design:done',
+          id,
+          action: existing.action,
+          content: existing.content,
+          summary: existing.summary ?? '',
+          changedFiles: files,
+          noChanges: files.length === 0,
+        })
+      } else {
+        broadcast({ type: 'design:failed', id, error: error! })
+      }
     }
 
     res.json({ ok: true })
@@ -132,6 +130,9 @@ export default function createApp(): AppInstance {
     res.json({ id, action, status, summary, changedFiles, content, error, createdAt, claimedAt, completedAt })
   })
 
+  // Map of requestId → cancel function for in-flight claude subprocesses
+  const cancelMap = new Map<string, () => void>()
+
   const httpServer = createServer(app)
   const wss = new WebSocketServer({ server: httpServer })
 
@@ -139,6 +140,15 @@ export default function createApp(): AppInstance {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg))
     }
+  }
+
+  function broadcast(msg: ServerMessage): void {
+    const payload = JSON.stringify(msg)
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload)
+      }
+    })
   }
 
   wss.on('connection', (ws) => {
@@ -167,11 +177,54 @@ export default function createApp(): AppInstance {
           break
         }
 
+        case 'file:read': {
+          const { file, requestId } = msg
+          if (!file || !requestId) return
+          const result = await readFullFile(file)
+          if (result) {
+            send(ws, {
+              type: 'file:content',
+              requestId,
+              content: result.content,
+              language: result.language,
+              totalLines: result.totalLines,
+              truncated: result.truncated,
+            })
+          } else {
+            send(ws, { type: 'file:error', requestId, error: `文件不存在或无法读取: ${file}` })
+          }
+          break
+        }
+
         case 'design:request': {
-          const { element, userMessage, action } = msg
-          if (!element || !userMessage) return
-          const request = queue.enqueue(element, userMessage, action)
+          const { element, userMessage, action, pageUrl } = msg
+          if (!userMessage) return
+          const request = queue.enqueue(element, userMessage, action, pageUrl)
           send(ws, { type: 'design:queued', id: request.id })
+          if (action === 'develop') {
+            setImmediate(() => {
+              const claimed = queue.claimById(request.id)
+              if (!claimed) return
+              const cancel = runClaudeOnRequest(claimed, queue.updateStatus.bind(queue), queue.complete.bind(queue), broadcast)
+              cancelMap.set(claimed.id, cancel)
+            })
+          }
+          break
+        }
+
+        case 'design:cancel': {
+          const cancel = cancelMap.get(msg.id)
+          if (cancel) {
+            cancel()
+            cancelMap.delete(msg.id)
+          } else {
+            // Request is still in queue (setImmediate runner not yet registered).
+            // Broadcast failure so the browser panel can exit loading state.
+            const cancelled = queue.cancel(msg.id)
+            if (cancelled) {
+              broadcast({ type: 'design:failed', id: msg.id, error: '用户取消' })
+            }
+          }
           break
         }
 
@@ -213,7 +266,7 @@ async function enrichWithFileContext(messages: ChatMessage[]): Promise<ChatMessa
   if (!fileMatch) return messages
 
   const [, file, lineStr] = fileMatch
-  const line = parseInt(lineStr ?? '1', 10)
+  const line = parseInt(lineStr, 10)
   const ctx = await readFileContext(file, line)
 
   if (!ctx) return messages

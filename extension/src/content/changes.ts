@@ -33,23 +33,44 @@ class ChangeTracker {
   private listeners: (() => void)[] = []
 
   addChange(change: Omit<Change, 'id' | 'timestamp'>): void {
-    const entry: Change = {
-      ...change,
-      id: `chg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      timestamp: Date.now(),
+    // Deduplicate: same element instance + property = update in place, keeping original oldValue.
+    // Include sourceFile+sourceLine so different component types with the same CSS selector
+    // don't collide; fall back to selector-only when source info is unavailable.
+    const src = change.sourceFile ? `${change.sourceFile}:${change.sourceLine ?? ''}` : ''
+    const key = `${change.selector}::${src}::${change.property ?? '__text__'}`
+    const existing = this.changes.find(
+      (c) => {
+        const cSrc = c.sourceFile ? `${c.sourceFile}:${c.sourceLine ?? ''}` : ''
+        return `${c.selector}::${cSrc}::${c.property ?? '__text__'}` === key && c.type === change.type
+      },
+    )
+    if (existing) {
+      // If reverted to original, remove entirely
+      if (existing.oldValue === change.newValue) {
+        this.changes = this.changes.filter((c) => c !== existing)
+      } else {
+        existing.newValue = change.newValue
+        existing.timestamp = Date.now()
+      }
+    } else {
+      this.changes = [...this.changes, {
+        ...change,
+        id: `chg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+      }]
     }
-    this.changes.push(entry)
     this.emit()
   }
 
-  addComment(comment: Omit<Comment, 'id' | 'timestamp'>): void {
+  addComment(comment: Omit<Comment, 'id' | 'timestamp'>): Comment {
     const entry: Comment = {
       ...comment,
       id: `cmt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp: Date.now(),
     }
-    this.comments.push(entry)
+    this.comments = [...this.comments, entry]
     this.emit()
+    return entry
   }
 
   removeChange(id: string): void {
@@ -77,7 +98,7 @@ class ChangeTracker {
   }
 
   onChange(listener: () => void): () => void {
-    this.listeners.push(listener)
+    this.listeners = [...this.listeners, listener]
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener)
     }

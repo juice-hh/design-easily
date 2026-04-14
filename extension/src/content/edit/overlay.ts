@@ -1,6 +1,8 @@
 /**
- * Edit mode selection overlay — blue border + resize handles + drag handle.
+ * Edit mode selection overlay — purple border + resize handles + drag handle.
  */
+
+import { ACCENT } from '../tokens.js'
 
 export const OVERLAY_ID = 'de-edit-overlay'
 
@@ -15,14 +17,14 @@ const OVERLAY_STYLES = `
   #de-edit-overlay .de-outline {
     position: absolute;
     inset: -2px;
-    border: 2px solid #007AFF;
+    border: 2px solid ${ACCENT};
     border-radius: 3px;
   }
   #de-edit-overlay .de-handle {
     position: absolute;
     width: 7px;
     height: 7px;
-    background: #007AFF;
+    background: ${ACCENT};
     border: 1.5px solid white;
     border-radius: 2px;
     pointer-events: all;
@@ -36,7 +38,7 @@ const OVERLAY_STYLES = `
     top: -22px;
     left: 50%;
     transform: translateX(-50%);
-    background: #007AFF;
+    background: ${ACCENT};
     color: white;
     font-size: 10px;
     padding: 2px 7px;
@@ -54,7 +56,7 @@ const OVERLAY_STYLES = `
     bottom: -20px;
     left: 0;
     font-size: 10px;
-    color: #007AFF;
+    color: ${ACCENT};
     font-family: "SF Mono", "Menlo", monospace;
     white-space: nowrap;
     pointer-events: none;
@@ -63,7 +65,7 @@ const OVERLAY_STYLES = `
     position: absolute;
     left: -1px;
     bottom: 100%;
-    background: #007AFF;
+    background: ${ACCENT};
     color: white;
     font-size: 10px;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro", monospace;

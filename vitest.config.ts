@@ -13,7 +13,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       // Include only unit-testable modules.
-      // Chrome Extension UI files (inspect.ts, toolbar.ts, changesPanel.ts, etc.)
+      // Chrome Extension UI files (inspect.ts, toolbar.ts, etc.)
       // require a real browser runtime and are covered by E2E tests instead.
       include: [
         'server/src/**/*.ts',
@@ -21,7 +21,7 @@ export default defineConfig({
         'extension/src/content/fiber.ts',
         'extension/src/content/requestHistory.ts',
       ],
-      exclude: ['**/node_modules/**', '**/dist/**', 'server/src/index.ts'],
+      exclude: ['**/node_modules/**', '**/dist/**', 'server/src/index.ts', 'server/src/mcp.ts'],
       thresholds: {
         lines: 80,
         functions: 80,

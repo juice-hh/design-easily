@@ -94,7 +94,9 @@ describe('queue — override rules', () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
     queue.enqueue(element, 'test')
     const req = await queue.dequeue(1000)
-    // Manually mark as failed (simulating auto-timeout)
+    // Intentionally mutate via reference to simulate auto-timeout (cleanupStale sets
+    // status directly on the stored object). This tests that complete() can override
+    // a failed state even when the transition bypassed the normal complete() path.
     const r = queue.getById(req!.id)!
     r.status = 'failed'
     r.error = 'timed out'
@@ -156,6 +158,22 @@ describe('queue — stale cleanup', () => {
 
     expect(queue.getById(req.id)?.status).toBe('failed')
     expect(queue.getById(req.id)?.error).toBe('timed out')
+  })
+})
+
+describe('queue — pageUrl', () => {
+  it('stores pageUrl when passed to enqueue', () => {
+    const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
+    const req = queue.enqueue(element, 'test', 'develop', 'http://localhost:3000/dashboard')
+    expect(req.pageUrl).toBe('http://localhost:3000/dashboard')
+    expect(queue.getById(req.id)?.pageUrl).toBe('http://localhost:3000/dashboard')
+  })
+
+  it('pageUrl is undefined when not passed', () => {
+    const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
+    const req = queue.enqueue(element, 'test')
+    expect(req.pageUrl).toBeUndefined()
+    expect(queue.getById(req.id)?.pageUrl).toBeUndefined()
   })
 })
 

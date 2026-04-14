@@ -16,11 +16,11 @@ export interface ElementContext {
   sourceLine?: number
 }
 
-export type RequestStatus = 'pending' | 'claimed' | 'completed' | 'failed'
+export type RequestStatus = 'pending' | 'claimed' | 'analyzing' | 'editing' | 'completed' | 'failed'
 
 export interface DesignRequest {
   id: string
-  element: ElementContext
+  element: ElementContext | null
   userMessage: string
   action: 'suggest' | 'develop'
   status: RequestStatus
@@ -28,6 +28,7 @@ export interface DesignRequest {
   claimedAt?: number
   completedAt?: number
   changedFiles?: string[]
+  pageUrl?: string
   summary?: string
   content?: string
   error?: string
@@ -54,10 +55,10 @@ class DesignQueue extends EventEmitter {
     super()
     this.cleanupTimer = setInterval(() => this.cleanupStale(), CLEANUP_INTERVAL_MS)
     // Don't keep the Node process alive just for cleanup
-    if (this.cleanupTimer.unref) this.cleanupTimer.unref()
+    this.cleanupTimer.unref()
   }
 
-  enqueue(element: ElementContext, userMessage: string, action: 'suggest' | 'develop' = 'develop'): DesignRequest {
+  enqueue(element: ElementContext | null, userMessage: string, action: 'suggest' | 'develop' = 'develop', pageUrl?: string): DesignRequest {
     const id = randomUUID()
     const request: DesignRequest = {
       id,
@@ -66,6 +67,7 @@ class DesignQueue extends EventEmitter {
       action,
       status: 'pending',
       createdAt: Date.now(),
+      pageUrl,
     }
     this.requestsById.set(id, request)
     this.pending.push(id)
@@ -121,6 +123,34 @@ class DesignQueue extends EventEmitter {
     } else {
       request.error = payload.error
     }
+    this.inFlight.delete(id)
+    return true
+  }
+
+  claimById(id: string): DesignRequest | undefined {
+    const request = this.requestsById.get(id)
+    if (!request || request.status !== 'pending') return undefined
+    const pendingIdx = this.pending.indexOf(id)
+    if (pendingIdx !== -1) this.pending.splice(pendingIdx, 1)
+    return this.claim(id)
+  }
+
+  updateStatus(id: string, status: RequestStatus): DesignRequest | undefined {
+    const request = this.requestsById.get(id)
+    if (!request) return undefined
+    request.status = status
+    return request
+  }
+
+  cancel(id: string): boolean {
+    const request = this.requestsById.get(id)
+    if (!request) return false
+    if (request.status === 'completed' || request.status === 'failed') return false
+    const pendingIdx = this.pending.indexOf(id)
+    if (pendingIdx !== -1) this.pending.splice(pendingIdx, 1)
+    request.status = 'failed'
+    request.error = '用户取消'
+    request.completedAt = Date.now()
     this.inFlight.delete(id)
     return true
   }

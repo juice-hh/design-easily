@@ -4,9 +4,12 @@
  * Apple frosted-glass style.
  */
 
-export type Mode = 'inspect' | 'edit' | 'config' | null
+export type Mode = 'inspect' | 'edit' | 'config' | 'comment' | null
 
 type ModeChangeHandler = (mode: Mode) => void
+type RulerToggleHandler = (on: boolean) => void
+
+const RULER_ICON = `<svg viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor"><path d="M872.803 755.994h0.061v-0.37z m-44.873-646.08l-245.394 0.09c-2.91-0.456-7.087-0.368-7.82-0.09H196.067c-47.545 0-86.268 38.695-86.268 86.224v631.908c0 47.545 38.723 86.269 86.268 86.269h149.16c47.573 0 86.267-38.724 86.267-86.269V416.983H852.54c1.855 0-1.881-0.148 0-0.53 31.844 1.985 61.659-26.256 61.659-56.276v-164.01c0-47.528-38.724-86.253-86.27-86.253M858.1 326.1c3.527 35.886-40.136 32.446-40.136 32.446h-419.4c-1.793 0.574-3.234 1.382-4.822 2.058-0.763 0.295-1.47 0.559-2.174 0.897-10.057 4.822-16.174 12.04-16.174 25.258v437.144c0 18.906-15.407 34.284-34.282 34.284H200.213c-18.906 0-34.283-15.378-34.283-34.284v-77.77h139.457c16.141 0 29.226-13.114 29.226-29.227s-13.085-29.257-29.226-29.257H165.929v-95.087h95.589c16.113 0 29.255-13.145 29.255-29.285 0-16.055-13.143-29.198-29.255-29.198h-95.59V438.96h139.458c16.141 0 29.226-13.113 29.226-29.256 0-16.113-13.085-29.24-29.226-29.24H165.929V200.328c0-18.907 15.378-34.299 34.283-34.299h173.094v103.704c0 16.553 13.085 30.049 29.255 30.049 16.113 0 29.228-13.496 29.228-30.049V166.03H548.84v81.754c0 16.553 13.112 30.02 29.194 30.02 16.143 0 29.256-13.467 29.256-30.02V166.03h95.12v103.704c0 16.553 13.143 30.049 29.254 30.049 16.113 0 29.198-13.496 29.198-30.049V166.03h62.922c18.905 0 34.312 15.392 34.312 34.299v125.77z"/></svg>`
 
 interface ToolbarItem {
   id: Mode
@@ -18,8 +21,8 @@ interface ToolbarItem {
 const TOOLS: ToolbarItem[] = [
   {
     id: 'inspect',
-    icon: `<svg viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor"><path d="M64 368c26.24 0 48-21.76 48-48V160c0-26.24 21.76-48 48-48H320c26.24 0 48-21.76 48-48S346.24 16 320 16H160C80.64 16 16 80.64 16 160V320c0 26.24 21.76 48 48 48zM320 912H160c-26.24 0-48-21.76-48-48V704c0-26.24-21.76-48-48-48s-48 21.76-48 48v160c0 79.36 64.64 144 144 144H320c26.24 0 48-21.76 48-48s-21.76-48-48-48zM960 656c-26.24 0-48 21.76-48 48v160c0 26.24-21.76 48-48 48H704c-26.24 0-48 21.76-48 48s21.76 48 48 48h160c79.36 0 144-64.64 144-144V704c0-26.24-21.76-48-48-48zM864 16H704c-26.24 0-48 21.76-48 48s21.76 48 48 48h160c26.24 0 48 21.76 48 48V320c0 26.24 21.76 48 48 48s48-21.76 48-48V160c0-79.36-64.64-144-144-144z"/><path d="M734.08 801.92c9.6 9.6 21.76 14.08 33.92 14.08s24.32-4.48 33.92-14.08c18.56-18.56 18.56-49.28 0-67.84l-110.08-110.08c28.16-40.96 44.16-90.24 44.16-144 0-141.44-114.56-256-256-256s-256 114.56-256 256 114.56 256 256 256c53.12 0 103.04-16.64 144-44.16l110.08 110.08zM320 480a160 160 0 0 1 320 0 160 160 0 0 1-320 0z"/></svg>`,
-    label: '审查',
+    icon: `<svg viewBox="30 190 964 590" width="18" height="18" fill="currentColor"><path d="M965.76 453.76l-231.04-231.04a48.256 48.256 0 0 0-67.84 0c-18.56 18.56-18.56 49.28 0 67.84l201.6 201.6-201.6 200.96c-18.56 18.56-18.56 49.28 0 67.84 9.6 9.6 21.76 14.08 33.92 14.08s24.32-4.48 33.92-14.08l231.04-231.04c21.12-21.12 21.12-54.4 0-76.16zM357.12 222.72a48.256 48.256 0 0 0-67.84 0L58.24 453.76c-21.12 21.12-21.12 54.4 0.64 76.8l231.04 230.4c9.6 9.6 21.76 14.08 33.92 14.08s24.32-4.48 33.92-14.08c18.56-18.56 18.56-49.28 0-67.84L155.52 492.16l201.6-201.6c18.56-18.56 18.56-49.28 0-67.84zM591.36 209.92a48 48 0 0 0-58.88 33.92l-128 480c-7.04 25.6 8.32 51.84 33.92 58.88 3.84 1.28 8.32 1.92 12.16 1.92 21.12 0 40.32-14.08 46.08-35.84l128-480c7.68-25.6-7.68-51.84-33.28-58.88z"/></svg>`,
+    label: '开发',
     shortcut: 'I',
   },
   {
@@ -27,6 +30,12 @@ const TOOLS: ToolbarItem[] = [
     icon: `<svg viewBox="80 80 864 864" width="18" height="18" fill="currentColor"><path d="M751.914667 886.016c-9.024 0-18.026667-3.434667-24.896-10.304l-123.754667-123.754667-48.512 107.050667a34.645333 34.645333 0 0 1-33.6 20.629333 34.986667 34.986667 0 0 1-31.68-23.466666l-144.298667-406.826667a34.922667 34.922667 0 0 1 8.32-36.650667 34.944 34.944 0 0 1 36.672-8.32l406.826667 144.298667a35.072 35.072 0 0 1 23.445333 31.701333 35.114667 35.114667 0 0 1-20.650666 33.6l-107.029334 48.512 123.733334 123.733334a35.285333 35.285333 0 0 1 0 49.834666l-39.68 39.658667a35.136 35.136 0 0 1-24.896 10.304"/><path d="M290.794667 604.096H288a74.666667 74.666667 0 0 1-74.666667-74.666667V288a74.666667 74.666667 0 0 1 74.666667-74.666667h448a74.666667 74.666667 0 0 1 74.666667 74.666667v176.896a32 32 0 1 0 64 0V288A138.666667 138.666667 0 0 0 736 149.333333h-448A138.688 138.688 0 0 0 149.333333 288v241.429333a138.666667 138.666667 0 0 0 138.666667 138.666667h2.794667a32 32 0 0 0 0-64"/></svg>`,
     label: '编辑',
     shortcut: 'E',
+  },
+  {
+    id: 'comment',
+    icon: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    label: '评论',
+    shortcut: 'C',
   },
   {
     id: 'config',
@@ -152,12 +161,14 @@ export class Toolbar {
   private shadow: ShadowRoot
   private activeMode: Mode = null
   private handlers: ModeChangeHandler[] = []
+  private rulerHandlers: RulerToggleHandler[] = []
+  private rulerActive = false
   private serverDot: HTMLElement | null = null
   private hidden = false
 
   constructor() {
     this.host = document.createElement('div')
-    this.host.setAttribute('data-design-easily', 'toolbar')
+    this.host.dataset['designEasily'] = 'toolbar'
     this.shadow = this.host.attachShadow({ mode: 'open' })
     this.render()
     document.body.appendChild(this.host)
@@ -177,6 +188,10 @@ export class Toolbar {
           </button>
         `).join('')}
         <div class="divider"></div>
+        <button class="tool-btn${this.rulerActive ? ' active' : ''}" data-action="ruler" data-tooltip="标尺  R">
+          ${RULER_ICON}
+        </button>
+        <div class="divider"></div>
         <div class="server-dot" title="本地服务状态"></div>
         <button class="tool-btn close-btn" data-action="close" data-tooltip="关闭">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -189,11 +204,17 @@ export class Toolbar {
 
     this.serverDot = this.shadow.querySelector('.server-dot')
 
-    this.shadow.querySelectorAll('.tool-btn[data-mode]').forEach((btn) => {
+    this.shadow.querySelectorAll<HTMLButtonElement>('.tool-btn[data-mode]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const mode = btn.getAttribute('data-mode') as Mode
+        const mode = btn.dataset['mode'] as Mode
         this.setMode(this.activeMode === mode ? null : mode)
       })
+    })
+
+    this.shadow.querySelector<HTMLButtonElement>('[data-action="ruler"]')?.addEventListener('click', () => {
+      this.rulerActive = !this.rulerActive
+      this.shadow.querySelector('[data-action="ruler"]')?.classList.toggle('active', this.rulerActive)
+      this.rulerHandlers.forEach((h) => h(this.rulerActive))
     })
 
     this.shadow.querySelector('[data-action="close"]')?.addEventListener('click', () => {
@@ -203,8 +224,10 @@ export class Toolbar {
     })
   }
 
-  private handleKeyDown = (e: KeyboardEvent): void => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+  private readonly handleKeyDown = (e: KeyboardEvent): void => {
+    // composedPath() 穿透 Shadow DOM，确保捕捉到 shadow 内的 input/textarea
+    const path = e.composedPath()
+    if (path.some((el) => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return
 
     if (e.key === 'Tab') {
       e.preventDefault()
@@ -212,10 +235,18 @@ export class Toolbar {
       return
     }
 
+    if ((e.key === 'r' || e.key === 'R') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      this.rulerActive = !this.rulerActive
+      this.shadow.querySelector('[data-action="ruler"]')?.classList.toggle('active', this.rulerActive)
+      this.rulerHandlers.forEach((h) => h(this.rulerActive))
+      return
+    }
+
     const modeMap: Record<string, Mode> = {
       i: 'inspect', I: 'inspect',
       e: 'edit', E: 'edit',
       g: 'config', G: 'config',
+      c: 'comment', C: 'comment',
     }
     const mode = modeMap[e.key]
     if (mode && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -225,14 +256,18 @@ export class Toolbar {
 
   setMode(mode: Mode): void {
     this.activeMode = mode
-    this.shadow.querySelectorAll('.tool-btn[data-mode]').forEach((btn) => {
-      btn.classList.toggle('active', btn.getAttribute('data-mode') === mode)
+    this.shadow.querySelectorAll<HTMLButtonElement>('.tool-btn[data-mode]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset['mode'] === mode)
     })
     this.handlers.forEach((h) => h(mode))
   }
 
   onModeChange(handler: ModeChangeHandler): void {
     this.handlers.push(handler)
+  }
+
+  onRulerToggle(handler: RulerToggleHandler): void {
+    this.rulerHandlers.push(handler)
   }
 
   setServerStatus(connected: boolean): void {

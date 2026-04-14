@@ -4,7 +4,9 @@
 
 import { changeTracker, type Change, type Comment } from './changes.js'
 import { wsClient } from './ws.js'
+import { requestHistory } from './requestHistory.js'
 import { makePanelDraggable } from './draggable.js'
+import { ACCENT, ACCENT_HOVER } from './tokens.js'
 
 type Tab = 'all' | 'style' | 'text' | 'comment'
 
@@ -66,11 +68,12 @@ const PANEL_STYLES = `
     color: rgba(255,255,255,0.7);
   }
   .cfg-btn.primary {
-    background: rgba(255,255,255,0.9); border: none; color: #1c1c1e; position: relative;
+    background: ${ACCENT}; border: none; color: white; position: relative;
   }
+  .cfg-btn.primary:hover { opacity: 1; background: ${ACCENT_HOVER}; }
   .cfg-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .cfg-count-badge {
-    background: #1c1c1e; color: white; font-size: 9px; font-weight: 700;
+    background: rgba(255,255,255,0.25); color: white; font-size: 9px; font-weight: 700;
     padding: 1px 4px; border-radius: 8px; margin-left: 2px; min-width: 14px;
     text-align: center; line-height: 14px;
   }
@@ -392,11 +395,23 @@ export class ConfigPanel {
       const prompt = changeTracker.exportAIPrompt()
       this.submitState = 'loading'
       this.render()
-      wsClient.send({ type: 'design:request', action: 'develop', userMessage: prompt, element: null as never })
-      // Listen for completion
+      wsClient.send({ type: 'design:request', action: 'develop', userMessage: prompt, element: null })
+
+      let pendingId: string | null = null
       const unsub = wsClient.onMessage((msg) => {
-        if (msg.type === 'design:done' || msg.type === 'design:failed') {
+        if (msg.type === 'design:queued') {
+          pendingId = msg.id
+          requestHistory.add({ id: msg.id, action: 'develop', userMessage: prompt, status: 'pending' })
+          return
+        }
+        if (pendingId === null || msg.type === 'design:processing') return
+        if ((msg.type === 'design:done' || msg.type === 'design:failed') && msg.id === pendingId) {
           this.submitState = msg.type === 'design:done' ? 'done' : 'error'
+          if (msg.type === 'design:done') {
+            requestHistory.update(msg.id, { status: 'completed', summary: msg.summary, changedFiles: msg.changedFiles })
+          } else {
+            requestHistory.update(msg.id, { status: 'failed', error: msg.error })
+          }
           this.render()
           setTimeout(() => { this.submitState = 'idle'; this.render() }, 2500)
           unsub()

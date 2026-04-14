@@ -3,6 +3,8 @@
  * Displays px labels on cyan overlay lines, Figma-style.
  */
 
+import { ACCENT_RGB } from './tokens.js'
+
 const RULER_ID = 'de-ruler-canvas'
 const RULER_STYLES_ID = 'de-ruler-styles'
 
@@ -118,7 +120,7 @@ function createLine(
 }
 
 function drawGuideH(canvas: HTMLElement, y: number, anchor = false): void {
-  const color = anchor ? 'rgba(139,92,246,0.4)' : 'rgba(52,199,89,0.4)'
+  const color = anchor ? 'rgba(${ACCENT_RGB},0.4)' : 'rgba(52,199,89,0.4)'
   const line = document.createElement('div')
   Object.assign(line.style, {
     position: 'absolute',
@@ -133,7 +135,7 @@ function drawGuideH(canvas: HTMLElement, y: number, anchor = false): void {
 }
 
 function drawGuideV(canvas: HTMLElement, x: number, anchor = false): void {
-  const color = anchor ? 'rgba(139,92,246,0.4)' : 'rgba(52,199,89,0.4)'
+  const color = anchor ? 'rgba(${ACCENT_RGB},0.4)' : 'rgba(52,199,89,0.4)'
   const line = document.createElement('div')
   Object.assign(line.style, {
     position: 'absolute',

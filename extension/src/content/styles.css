@@ -1,0 +1,15 @@
+/* Design Easily — Global Styles */
+/* All elements use Shadow DOM isolation; this file covers host-level resets */
+
+:root {
+  --de-glass-bg: rgba(255, 255, 255, 0.72);
+  --de-glass-bg-dark: rgba(30, 30, 32, 0.78);
+  --de-glass-border: rgba(255, 255, 255, 0.55);
+  --de-glass-blur: blur(20px) saturate(180%);
+  --de-accent: #8B5CF6;
+  --de-accent-hover: #7C3AED;
+  --de-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255,255,255,0.6) inset;
+  --de-radius: 12px;
+  --de-radius-sm: 8px;
+  --de-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+}

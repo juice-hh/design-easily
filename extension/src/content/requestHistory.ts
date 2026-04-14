@@ -2,7 +2,7 @@ export interface DesignEntry {
   id: string
   action: 'suggest' | 'develop'
   userMessage: string
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  status: 'pending' | 'processing' | 'analyzing' | 'completed' | 'failed'
   content?: string
   summary?: string
   changedFiles?: string[]
@@ -35,7 +35,7 @@ class RequestHistory {
 
   pendingCount(): number {
     return this.entries.filter(
-      (e) => e.status === 'pending' || e.status === 'processing',
+      (e) => e.status === 'pending' || e.status === 'processing' || e.status === 'analyzing',
     ).length
   }
 
