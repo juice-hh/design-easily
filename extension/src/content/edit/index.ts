@@ -10,7 +10,11 @@ import {
 } from './overlay.js'
 import { PropertiesPanel, type StyleEdit } from './properties.js'
 import { makeResizable } from './resize.js'
-import { extractFiberInfo, getComponentBreadcrumb } from '../fiber.js'
+import { buildUniqueSelector } from './selector.js'
+import { captureElementInfo } from './element-info.js'
+import { extractFiberInfo } from '../fiber.js'
+import { changeTracker } from '../changes.js'
+import { Z } from '../tokens.js'
 
 // ─── Component sync ───────────────────────────────────────────────────────────
 
@@ -63,11 +67,11 @@ function makeDraggable(dragHandle: Element, target: Element): () => void {
     me.stopPropagation()
     dragging = true
 
-    const computed = window.getComputedStyle(target as HTMLElement)
+    const computed = globalThis.getComputedStyle(target as HTMLElement)
     startX = me.clientX
     startY = me.clientY
-    startTop = parseInt(computed.top) || 0
-    startLeft = parseInt(computed.left) || 0
+    startTop = Number.parseFloat(computed.top) || 0
+    startLeft = Number.parseFloat(computed.left) || 0
 
     // Ensure position is set
     if (computed.position === 'static') {
@@ -90,9 +94,35 @@ function makeDraggable(dragHandle: Element, target: Element): () => void {
   }
 
   const onMouseUp = (): void => {
+    if (!dragging) return
     dragging = false
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
+
+    const htmlTarget = target as HTMLElement
+    const endTop = Number.parseFloat(htmlTarget.style.top) || 0
+    const endLeft = Number.parseFloat(htmlTarget.style.left) || 0
+    if (Math.round(endTop) === Math.round(startTop) && Math.round(endLeft) === Math.round(startLeft)) return
+
+    const fiber = extractFiberInfo(target)
+    const selector = buildUniqueSelector(target)
+    const { classList, parentClassList, parentLayoutCtx } = captureElementInfo(target)
+    const base = {
+      type: 'style' as const,
+      selector,
+      componentName: fiber.componentName,
+      sourceFile: fiber.sourceFile,
+      sourceLine: fiber.sourceLine,
+      classList,
+      parentClassList,
+      parentLayoutCtx,
+    }
+    if (Math.round(endTop) !== Math.round(startTop)) {
+      changeTracker.addChange({ ...base, property: 'top', oldValue: `${Math.round(startTop)}px`, newValue: `${Math.round(endTop)}px` })
+    }
+    if (Math.round(endLeft) !== Math.round(startLeft)) {
+      changeTracker.addChange({ ...base, property: 'left', oldValue: `${Math.round(startLeft)}px`, newValue: `${Math.round(endLeft)}px` })
+    }
   }
 
   dragHandle.addEventListener('mousedown', onMouseDown)
@@ -227,7 +257,7 @@ export class EditMode {
     Object.assign(ov.style, {
       position: 'fixed',
       pointerEvents: 'none',
-      zIndex: '2147483639',
+      zIndex: String(Z.EDIT_PREVIEW),
       border: '1.5px solid rgba(0,0,0,0.5)',
       borderRadius: '3px',
       boxSizing: 'border-box',

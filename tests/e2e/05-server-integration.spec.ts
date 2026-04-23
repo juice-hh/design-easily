@@ -38,7 +38,12 @@ vi.mock('../../server/src/openai.js', () => ({
   streamOpenAIResponse: vi.fn().mockResolvedValue(undefined),
 }))
 
-// fileReader is NOT mocked — tests use the real implementation with real/missing temp files.
+// fileReader: real read/context functions; only isPathAllowed is stubbed to true so test paths
+// (e.g. /src/App.tsx) pass the workspace allowlist without needing a real workspace root.
+vi.mock('../../server/src/fileReader.js', async (importActual) => {
+  const actual = await importActual<typeof import('../../server/src/fileReader.js')>()
+  return { ...actual, isPathAllowed: vi.fn().mockReturnValue(true) }
+})
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 

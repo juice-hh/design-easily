@@ -1,12 +1,14 @@
 /** Figma-style panel CSS — imported by properties.ts */
 
+import { Z } from '../tokens.js'
+
 export const PANEL_STYLES = `
   :host {
     all: initial;
     position: fixed;
     top: 64px;
     right: 16px;
-    z-index: 2147483646;
+    z-index: ${Z.PANEL};
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif;
     width: 240px;
     max-height: calc(100vh - 80px);

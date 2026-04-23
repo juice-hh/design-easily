@@ -7,6 +7,10 @@ dist/
 # Extension build artifacts
 extension/dist.crx
 extension/dist.pem
+extension/*.zip
+
+# Audit / analysis reports
+.reports/
 
 # Test coverage output
 coverage/

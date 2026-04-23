@@ -20,6 +20,7 @@ vi.mock('../../server/src/vscode.js', () => ({
 vi.mock('../../server/src/fileReader.js', () => ({
   readFileContext: vi.fn().mockResolvedValue(null),
   readFullFile: vi.fn().mockResolvedValue(null),
+  isPathAllowed: vi.fn().mockReturnValue(true),
 }))
 
 vi.mock('../../server/src/openai.js', () => ({

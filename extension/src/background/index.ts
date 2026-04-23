@@ -64,8 +64,6 @@ chrome.runtime.onMessage.addListener(
       return true
     }
 
-    console.log('[DE bg] locate-source received, tabId:', tabId)
-
     locateSource(tabId)
       .then(sendResponse)
       .catch((err) => {
@@ -105,19 +103,15 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
   }
 
   try {
-    console.log('[DE bg] attaching debugger to tab', tabId)
     await chrome.debugger.attach(debuggee, '1.3')
-    console.log('[DE bg] debugger attached')
 
     chrome.debugger.onEvent.addListener(onEvent)
 
     // Enable Debugger domain — triggers scriptParsed replay for all loaded scripts
     await chrome.debugger.sendCommand(debuggee, 'Debugger.enable', {})
-    console.log('[DE bg] Debugger.enable done, scriptMap size:', scriptMap.size)
 
     // Give browser time to fire all scriptParsed events
     await sleep(200)
-    console.log('[DE bg] after wait, scriptMap size:', scriptMap.size)
 
     // Find the marked element in the main world and return its React component function.
     // Content scripts run in an isolated world — window globals set there are NOT visible
@@ -155,7 +149,6 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
     }
 
     const objectId = evalResult.result?.objectId
-    console.log('[DE bg] evaluate result type:', evalResult.result?.type, 'objectId:', objectId)
 
     // If result has no objectId it's a plain value (our error sentinel)
     if (!objectId) {
@@ -171,13 +164,11 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
     ) as GetPropertiesResult
 
     const internalProps = propsResult.internalProperties ?? []
-    console.log('[DE bg] internal props:', internalProps.map((p) => p.name))
 
     const fnLocProp = internalProps.find((p) => p.name === '[[FunctionLocation]]')
     // Chrome returns [[FunctionLocation]] with subtype 'internal#location' and
     // the data directly in value.value: { scriptId, lineNumber, columnNumber }
     const loc = fnLocProp?.value?.value
-    console.log('[DE bg] FunctionLocation loc:', JSON.stringify(loc))
 
     if (!loc || typeof loc.scriptId !== 'string') {
       console.warn('[DE bg] [[FunctionLocation]] missing or invalid:', JSON.stringify(fnLocProp?.value))
@@ -187,7 +178,6 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
     const scriptId     = loc.scriptId
     const lineNumber   = loc.lineNumber
     const columnNumber = loc.columnNumber
-    console.log('[DE bg] FunctionLocation — scriptId:', scriptId, 'line:', lineNumber, 'col:', columnNumber)
 
     if (scriptId == null || lineNumber == null) {
       console.warn('[DE bg] missing scriptId or lineNumber')
@@ -195,7 +185,6 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
     }
 
     const scriptInfo = scriptMap.get(scriptId)
-    console.log('[DE bg] scriptInfo for', scriptId, ':', scriptInfo)
     if (!scriptInfo) {
       console.warn('[DE bg] scriptId not in scriptMap (map has', scriptMap.size, 'entries)')
       return { file: null, line: null, column: null }
@@ -203,14 +192,12 @@ async function locateSource(tabId: number): Promise<LocateSourceResponse> {
 
     // If there's a sourcemap, resolve the original location
     if (scriptInfo.sourceMapURL) {
-      console.log('[DE bg] resolving sourcemap:', scriptInfo.sourceMapURL.slice(0, 80))
       const resolved = await fetchAndResolveSourcemap(
         scriptInfo.url,
         scriptInfo.sourceMapURL,
         lineNumber,
         columnNumber ?? 0,
       )
-      console.log('[DE bg] sourcemap resolved:', resolved)
       if (resolved) {
         // Convert file:// URL to plain filesystem path (e.g. file:///Users/... → /Users/...)
         const source = resolved.source.startsWith('file://')

@@ -6,7 +6,7 @@ import { changeTracker, type Change, type Comment } from './changes.js'
 import { wsClient } from './ws.js'
 import { requestHistory } from './requestHistory.js'
 import { makePanelDraggable } from './draggable.js'
-import { ACCENT, ACCENT_HOVER } from './tokens.js'
+import { ACCENT, ACCENT_HOVER, Z } from './tokens.js'
 
 type Tab = 'all' | 'style' | 'text' | 'comment'
 
@@ -16,7 +16,7 @@ const PANEL_STYLES = `
     position: fixed;
     top: 56px;
     right: 12px;
-    z-index: 2147483645;
+    z-index: ${Z.DIALOG};
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     width: 320px;
     max-height: calc(100vh - 68px);
@@ -114,6 +114,10 @@ const PANEL_STYLES = `
   }
   .cfg-tab:hover { color: rgba(255,255,255,0.6); }
   .cfg-tab.active { color: rgba(255,255,255,0.9); border-bottom-color: rgba(255,255,255,0.7); }
+  .cfg-tab:focus-visible { outline: 2px solid rgba(139,92,246,0.8); outline-offset: -2px; border-radius: 3px; }
+  .cfg-btn:focus-visible { outline: 2px solid rgba(139,92,246,0.8); outline-offset: 2px; }
+  .cfg-undo-btn:focus-visible { outline: 2px solid rgba(139,92,246,0.7); outline-offset: 1px; }
+  .cfg-export-item:focus-visible { outline: 2px solid rgba(139,92,246,0.7); outline-offset: -2px; }
   .cfg-list {
     padding: 4px 0;
     overflow-y: auto;
@@ -232,7 +236,7 @@ export class ConfigPanel {
     ]
 
     const tabsHtml = tabs.map(({ id, label }) =>
-      `<button class="cfg-tab${this.activeTab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`
+      `<button role="tab" aria-selected="${this.activeTab === id}" class="cfg-tab${this.activeTab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`
     ).join('')
 
     const itemsHtml = filtered.length === 0
@@ -270,8 +274,8 @@ export class ConfigPanel {
           </div>
           <div class="cfg-sub">共 ${total} 项更改</div>
         </div>
-        <div class="cfg-tabs">${tabsHtml}</div>
-        <div class="cfg-list">${itemsHtml}</div>
+        <div class="cfg-tabs" role="tablist" aria-label="变更分类">${tabsHtml}</div>
+        <div class="cfg-list" role="tabpanel" aria-label="${this.activeTab === 'all' ? '全部变更' : tabs.find(t => t.id === this.activeTab)?.label + '变更'}">${itemsHtml}</div>
       </div>
     `
 
@@ -328,10 +332,25 @@ export class ConfigPanel {
   private bindEvents(): void {
     const sh = this.shadow
 
+    const TAB_ORDER: Tab[] = ['all', 'style', 'text', 'comment']
     sh.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.activeTab = btn.getAttribute('data-tab') as Tab
+        this.activeTab = btn.dataset['tab'] as Tab
         this.render()
+      })
+      btn.addEventListener('keydown', (e) => {
+        const idx = TAB_ORDER.indexOf(this.activeTab)
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          this.activeTab = TAB_ORDER[(idx + 1) % TAB_ORDER.length] ?? this.activeTab
+          this.render()
+          sh.querySelector<HTMLButtonElement>(`[data-tab="${this.activeTab}"]`)?.focus()
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          this.activeTab = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length] ?? this.activeTab
+          this.render()
+          sh.querySelector<HTMLButtonElement>(`[data-tab="${this.activeTab}"]`)?.focus()
+        }
       })
     })
 

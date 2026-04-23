@@ -135,7 +135,7 @@ function preResolveFile(
 
   // 2. Fallback: class name search
   if (distinctiveClass) {
-    const hits = grep(distinctiveClass.replace(/[[\](){}.*+?^$|\\]/g, '\\$&'))
+    const hits = grep(distinctiveClass.replaceAll(/[[\](){}.*+?^$|\\]/g, String.raw`\$&`))
     return hits.slice(0, 3)
   }
 
@@ -221,16 +221,18 @@ ${locationSection}
 
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
-// Maximum time to wait for claude subprocess (3 minutes)
-const CLAUDE_TIMEOUT_MS = 3 * 60 * 1000
+// Maximum time to wait for claude subprocess; override via CLAUDE_TIMEOUT_MS env var (default 5 min)
+const _parsedTimeout = Number.parseInt(process.env['CLAUDE_TIMEOUT_MS'] ?? '', 10)
+const CLAUDE_TIMEOUT_MS = Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 5 * 60 * 1000
 
-export function runClaudeOnRequest(
-  req: DesignRequest,
-  updateStatus: (id: string, status: RequestStatus) => void,
-  complete: (id: string, payload: CompletePayload) => boolean,
-  broadcast: (msg: ServerMessage) => void,
-): () => void {
-  const { id, element } = req
+interface ResolvedContext {
+  workspacePath: string
+  prompt: string
+  fileResolved: boolean
+}
+
+function resolveContext(req: DesignRequest): ResolvedContext {
+  const { element } = req
 
   let workspacePath: string
   if (element?.sourceFile) {
@@ -240,43 +242,44 @@ export function runClaudeOnRequest(
     workspacePath = fromUrl ?? config.workspacePath ?? process.cwd()
   }
 
-  let prompt: string
-  let fileResolved = false
-
   if (!element) {
-    // Batch submit from configPanel — no specific element context
-    prompt = buildBatchPrompt(req)
-    fileResolved = false
-  } else if (element.sourceFile) {
-    // Source file known — resolve absolute path and use direct prompt
-    const resolvedSourceFile = resolveFilePath(element.sourceFile, workspacePath)
-    const enrichedReq: DesignRequest = { ...req, element: { ...element, sourceFile: resolvedSourceFile } }
-    prompt = buildPrompt(enrichedReq)
-    fileResolved = true
-  } else {
-    // Source file unknown (SWC) — pre-grep on server to avoid extra Claude round-trips
-    const extra = element as unknown as ElementExtra
-    const componentName = extra.fiber?.componentName ?? null
-    const distinctiveClass = element.classList.find((c) => c.includes('['))
-      ?? element.classList.find((c) => c.length > 8)
-      ?? element.classList[0]
-      ?? null
-    const candidates = preResolveFile(componentName, distinctiveClass, workspacePath)
-    fileResolved = candidates.length === 1
-    prompt = buildGrepPrompt(req, candidates)
+    return { workspacePath, prompt: buildBatchPrompt(req), fileResolved: false }
   }
 
-  // Model for code edits; override via CLAUDE_MODEL env var
+  if (element.sourceFile) {
+    const resolvedSourceFile = resolveFilePath(element.sourceFile, workspacePath)
+    const enrichedReq: DesignRequest = { ...req, element: { ...element, sourceFile: resolvedSourceFile } }
+    return { workspacePath, prompt: buildPrompt(enrichedReq), fileResolved: true }
+  }
+
+  // Source file unknown (SWC) — pre-grep on server to avoid extra Claude round-trips
+  const extra = element as unknown as ElementExtra
+  const componentName = extra.fiber?.componentName ?? null
+  const distinctiveClass = element.classList.find((c) => c.includes('['))
+    ?? element.classList.find((c) => c.length > 8)
+    ?? element.classList[0]
+    ?? null
+  const candidates = preResolveFile(componentName, distinctiveClass, workspacePath)
+  return { workspacePath, prompt: buildGrepPrompt(req, candidates), fileResolved: candidates.length === 1 }
+}
+
+function spawnClaude(
+  id: string,
+  ctx: ResolvedContext,
+  complete: (id: string, payload: CompletePayload) => boolean,
+  broadcast: (msg: ServerMessage) => void,
+): () => void {
+  const { workspacePath, prompt, fileResolved } = ctx
   const model = process.env['CLAUDE_MODEL'] ?? 'claude-sonnet-4-6'
-  // When the file is already known, Bash is not needed — saves a decision round-trip
-  const allowedTools = fileResolved ? 'Edit,Write' : 'Edit,Write,Bash'
+  // Bash is disabled by default — enable only via CLAUDE_ALLOW_BASH=true.
+  // When the source file was not found we fall back to Edit,Write only;
+  // the prompt already includes a grep suggestion as a text hint.
+  const bashEnabled = process.env['CLAUDE_ALLOW_BASH'] === 'true'
+  const allowedTools = bashEnabled && !fileResolved ? 'Edit,Write,Bash' : 'Edit,Write'
+  const _parsedTurns = Number.parseInt(process.env['CLAUDE_MAX_TURNS'] ?? '', 10)
+  const maxTurns = String(Number.isFinite(_parsedTurns) && _parsedTurns > 0 ? _parsedTurns : 15)
 
-  updateStatus(id, 'analyzing')
-  broadcast({ type: 'design:processing', id, status: 'analyzing' })
-  updateStatus(id, 'editing')
-  broadcast({ type: 'design:processing', id, status: 'editing' })
-
-  const proc = spawn(CLAUDE_BIN, ['-p', prompt, '--allowedTools', allowedTools, '--model', model], {
+  const proc = spawn(CLAUDE_BIN, ['-p', prompt, '--allowedTools', allowedTools, '--model', model, '--max-turns', maxTurns], {
     cwd: workspacePath,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env },
@@ -312,9 +315,7 @@ export function runClaudeOnRequest(
     settle(() => {
       const stdout = Buffer.concat(stdoutChunks).toString('utf8').trim()
       const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
-
       if (code === 0) {
-        // Extract last non-empty line as summary (Claude's final response text)
         const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
         const summary = lines.at(-1) ?? '修改完成'
         complete(id, { status: 'completed', summary, changedFiles: [] })
@@ -336,7 +337,7 @@ export function runClaudeOnRequest(
     })
   })
 
-  const cancel = (): void => {
+  return (): void => {
     cancelled = true
     settle(() => {
       proc.kill('SIGTERM')
@@ -344,6 +345,21 @@ export function runClaudeOnRequest(
       broadcast({ type: 'design:failed', id, error: '用户取消' })
     })
   }
+}
 
-  return cancel
+export function runClaudeOnRequest(
+  req: DesignRequest,
+  updateStatus: (id: string, status: RequestStatus) => void,
+  complete: (id: string, payload: CompletePayload) => boolean,
+  broadcast: (msg: ServerMessage) => void,
+): () => void {
+  const { id } = req
+  const ctx = resolveContext(req)
+
+  updateStatus(id, 'analyzing')
+  broadcast({ type: 'design:processing', id, status: 'analyzing' })
+  updateStatus(id, 'editing')
+  broadcast({ type: 'design:processing', id, status: 'editing' })
+
+  return spawnClaude(id, ctx, complete, broadcast)
 }

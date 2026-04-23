@@ -13,6 +13,7 @@ import { CommentMode } from './comment'
 import { wsClient } from './ws'
 import { changeTracker } from './changes'
 import { requestHistory } from './requestHistory.js'
+import { Z } from './tokens.js'
 
 // ─── Per-tab activation ───────────────────────────────────────────────────────
 
@@ -97,6 +98,8 @@ function initDesignEasily(): Toolbar {
       const prompt = changeTracker.exportAIPrompt()
       navigator.clipboard.writeText(prompt).then(() => {
         showToast('AI Prompt 已复制到剪贴板')
+      }).catch(() => {
+        showToast('复制失败，请检查剪贴板权限')
       })
     }
 
@@ -154,7 +157,7 @@ const TOAST_STYLES = `
     font-size: 13px;
     font-weight: 500;
     box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-    z-index: 2147483647;
+    z-index: ${Z.TOOLBAR};
     animation: fadeInUp 0.2s ease;
   }
   @keyframes fadeInUp {

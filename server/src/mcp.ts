@@ -6,6 +6,9 @@
  *   complete_design_request — POST /api/complete/:id
  *
  * All console output goes to stderr to avoid polluting the MCP stdio stream.
+ *
+ * Auth: reads the session token written by the design server to
+ * ~/.design-easily/session-token and passes it as Authorization: Bearer <token>.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -15,7 +18,19 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 
-const SERVER_URL = 'http://127.0.0.1:3771'
+import { config } from './config.js'
+import { readPersistedToken } from './auth.js'
+
+const SERVER_URL = `http://127.0.0.1:${config.port}`
+
+function authHeaders(): Record<string, string> {
+  const token = readPersistedToken()
+  if (!token) {
+    process.stderr.write('[mcp] warning: no session token found — HTTP calls will be rejected with 401\n')
+    return {}
+  }
+  return { Authorization: `Bearer ${token}` }
+}
 
 const server = new Server(
   { name: 'design-easily', version: '0.1.0' },
@@ -70,72 +85,54 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }))
 
+type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
+
+async function watchDesignRequests(args: Record<string, unknown> | undefined): Promise<ToolResult> {
+  const timeoutMs = Math.min(
+    typeof args?.['timeout_ms'] === 'number' ? args['timeout_ms'] : 30_000,
+    60_000,
+  )
+  try {
+    const res = await fetch(`${SERVER_URL}/api/next?timeout=${timeoutMs}`, { headers: authHeaders() })
+    if (!res.ok) throw new Error(`Server responded ${res.status}`)
+    const body = await res.json() as { ok: boolean; request: unknown }
+    return { content: [{ type: 'text', text: JSON.stringify(body.request, null, 2) }] }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      content: [{ type: 'text', text: `Error: cannot reach design-easily server. Please run: npm run dev:server\n(${msg})` }],
+      isError: true,
+    }
+  }
+}
+
+async function completeDesignRequest(args: Record<string, unknown> | undefined): Promise<ToolResult> {
+  const { id, status, summary, changedFiles, error, content } = (args ?? {}) as {
+    id: string; status: 'completed' | 'failed'; summary?: string
+    changedFiles?: string[]; error?: string; content?: string
+  }
+  try {
+    const res = await fetch(`${SERVER_URL}/api/complete/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ status, summary, changedFiles, error, content }),
+    })
+    const body = await res.json() as { ok: boolean; error?: string }
+    if (!res.ok) {
+      return { content: [{ type: 'text', text: `Server rejected completion: ${body.error ?? res.status}` }], isError: true }
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(body) }] }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { content: [{ type: 'text', text: `Error: cannot reach design-easily server.\n(${msg})` }], isError: true }
+  }
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
-
-  if (name === 'watch_design_requests') {
-    const timeoutMs = Math.min(
-      typeof args?.['timeout_ms'] === 'number' ? (args['timeout_ms'] as number) : 30_000,
-      60_000,
-    )
-    try {
-      const res = await fetch(`${SERVER_URL}/api/next?timeout=${timeoutMs}`)
-      if (!res.ok) throw new Error(`Server responded ${res.status}`)
-      const body = await res.json() as { ok: boolean; request: unknown }
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(body.request, null, 2) }],
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Error: cannot reach design-easily server. Please run: npm run dev:server\n(${msg})`,
-        }],
-        isError: true,
-      }
-    }
-  }
-
-  if (name === 'complete_design_request') {
-    const { id, status, summary, changedFiles, error, content } = args as {
-      id: string
-      status: 'completed' | 'failed'
-      summary?: string
-      changedFiles?: string[]
-      error?: string
-      content?: string
-    }
-    try {
-      const res = await fetch(`${SERVER_URL}/api/complete/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, summary, changedFiles, error, content }),
-      })
-      const body = await res.json() as { ok: boolean; error?: string }
-      if (!res.ok) {
-        return {
-          content: [{ type: 'text' as const, text: `Server rejected completion: ${body.error ?? res.status}` }],
-          isError: true,
-        }
-      }
-      return { content: [{ type: 'text' as const, text: JSON.stringify(body) }] }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Error: cannot reach design-easily server.\n(${msg})`,
-        }],
-        isError: true,
-      }
-    }
-  }
-
-  return {
-    content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }],
-    isError: true,
-  }
+  if (name === 'watch_design_requests') return watchDesignRequests(args)
+  if (name === 'complete_design_request') return completeDesignRequest(args)
+  return { content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }], isError: true }
 })
 
 const transport = new StdioServerTransport()

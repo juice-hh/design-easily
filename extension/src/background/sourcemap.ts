@@ -213,8 +213,6 @@ export async function fetchAndResolveSourcemap(
       ? sourceMapURL
       : new URL(sourceMapURL, scriptUrl).href
 
-    console.log('[DE sm] fetching map:', mapUrl.slice(0, 120), 'line:', generatedLine, 'col:', generatedColumn)
-
     let mapJson: string
     if (mapUrl.startsWith('data:')) {
       // Inline sourcemap: data:application/json;base64,<payload>
@@ -225,20 +223,11 @@ export async function fetchAndResolveSourcemap(
       mapJson = isBase64 ? atob(payload) : decodeURIComponent(payload)
     } else {
       const resp = await fetch(mapUrl)
-      console.log('[DE sm] fetch status:', resp.status)
       if (!resp.ok) return null
       mapJson = await resp.text()
     }
 
-    // Log first 3 sources to understand path format
-    try {
-      const preview = JSON.parse(mapJson) as { sources?: string[]; sourceRoot?: string }
-      console.log('[DE sm] sourceRoot:', preview.sourceRoot, 'first sources:', preview.sources?.slice(0, 3))
-    } catch { /* ignore */ }
-
-    const result = resolveInSourcemap(mapJson, generatedLine, generatedColumn)
-    console.log('[DE sm] resolve result:', JSON.stringify(result))
-    return result
+    return resolveInSourcemap(mapJson, generatedLine, generatedColumn)
   } catch (err) {
     console.error('[DE sm] error:', err)
     return null

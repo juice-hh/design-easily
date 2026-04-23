@@ -4,6 +4,8 @@
  * Apple frosted-glass style.
  */
 
+import { Z } from './tokens.js'
+
 export type Mode = 'inspect' | 'edit' | 'config' | 'comment' | null
 
 type ModeChangeHandler = (mode: Mode) => void
@@ -52,7 +54,7 @@ const TOOLBAR_STYLES = `
     top: 14px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 2147483647;
+    z-index: ${Z.TOOLBAR};
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     pointer-events: none;
   }
@@ -165,7 +167,6 @@ export class Toolbar {
   private rulerActive = false
   private serverDot: HTMLElement | null = null
   private hidden = false
-
   constructor() {
     this.host = document.createElement('div')
     this.host.dataset['designEasily'] = 'toolbar'
@@ -183,18 +184,18 @@ export class Toolbar {
         <span class="tb-logo">DE</span>
         <div class="divider"></div>
         ${TOOLS.map((t) => `
-          <button class="tool-btn" data-mode="${t.id}" data-tooltip="${t.label}  ${t.shortcut}">
+          <button class="tool-btn" data-mode="${t.id}" data-tooltip="${t.label}  ${t.shortcut}" aria-label="${t.label} (${t.shortcut})">
             ${t.icon}
           </button>
         `).join('')}
         <div class="divider"></div>
-        <button class="tool-btn${this.rulerActive ? ' active' : ''}" data-action="ruler" data-tooltip="标尺  R">
+        <button class="tool-btn${this.rulerActive ? ' active' : ''}" data-action="ruler" data-tooltip="标尺  R" aria-label="标尺 (R)">
           ${RULER_ICON}
         </button>
         <div class="divider"></div>
-        <div class="server-dot" title="本地服务状态"></div>
-        <button class="tool-btn close-btn" data-action="close" data-tooltip="关闭">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <div class="server-dot" title="本地服务状态" aria-label="本地服务状态" role="status"></div>
+        <button class="tool-btn close-btn" data-action="close" data-tooltip="关闭" aria-label="关闭 Design Easily">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"/>
             <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>

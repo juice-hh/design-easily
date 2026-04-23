@@ -182,7 +182,7 @@ describe('02 — ChangeTracker', () => {
       expect(prompt).toContain(COMMENT_BASE.selector)
     })
 
-    it('includes 原文/新文 lines for text-type changes (line 116-117)', () => {
+    it('includes text change line for text-type changes', () => {
       changeTracker.addChange({
         type: 'text' as const,
         selector: '#heading',
@@ -194,8 +194,8 @@ describe('02 — ChangeTracker', () => {
         newValue: '设计每一个细节',
       })
       const prompt = changeTracker.exportAIPrompt()
-      expect(prompt).toContain('原文：欢迎使用')
-      expect(prompt).toContain('新文：设计每一个细节')
+      expect(prompt).toContain('欢迎使用')
+      expect(prompt).toContain('设计每一个细节')
     })
   })
 

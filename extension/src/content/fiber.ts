@@ -26,14 +26,19 @@ function getFiberKey(el: Element): string | null {
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Fiber = Record<string, any>
+// React fiber internals — not exported by React, so we type only what we use
+interface Fiber {
+  type: string | ((...args: unknown[]) => unknown) & { displayName?: string; name?: string } | { $$typeof?: unknown; render?: { displayName?: string; name?: string }; type?: { displayName?: string; name?: string }; displayName?: string; name?: string } | null
+  return: Fiber | null
+  memoizedProps: Record<string, unknown> | null
+  pendingProps: Record<string, unknown> | null
+  _debugSource: { fileName: string; lineNumber: number } | null
+}
 
 function getFiber(el: Element): Fiber | null {
   const key = getFiberKey(el)
   if (!key) return null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (el as any)[key] as Fiber
+  return (el as Element & Record<string, Fiber>)[key] ?? null
 }
 
 /**

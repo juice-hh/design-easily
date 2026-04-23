@@ -5,6 +5,16 @@
 
 export type ChangeType = 'style' | 'text' | 'comment' | 'layout'
 
+export interface LayoutContext {
+  display: string
+  position?: string
+  flexDirection?: string
+  justifyContent?: string
+  alignItems?: string
+  gap?: string
+  gridTemplateColumns?: string
+}
+
 export interface Change {
   id: string
   type: ChangeType
@@ -17,6 +27,10 @@ export interface Change {
   newValue?: string
   comment?: string          // For comment changes
   timestamp: number
+  // Layout context captured at edit time — used by exportAIPrompt
+  classList?: string[]
+  parentClassList?: string[]
+  parentLayoutCtx?: LayoutContext | null
 }
 
 export interface Comment {
@@ -26,6 +40,48 @@ export interface Comment {
   text: string
   timestamp: number
 }
+
+// ─── Intent helpers (module-level to keep class complexity low) ───────────────
+
+function sizeIntentLabel(prop: string, delta: number): string {
+  if (prop === 'width') return delta > 0 ? '视觉上变宽约' : '视觉上变窄约'
+  return delta > 0 ? '视觉上变高约' : '视觉上变矮约'
+}
+
+function offsetDir(prop: string, delta: number): string {
+  if (prop === 'left') return delta > 0 ? '右' : '左'
+  return delta > 0 ? '下' : '上'
+}
+
+function layoutHint(isFlex: boolean, isGrid: boolean, prop: string): string {
+  if (isFlex) {
+    return prop === 'left'
+      ? '（父容器为 flex，建议调整 margin 或元素间距）'
+      : '（父容器为 flex，建议调整 align-self 或 margin）'
+  }
+  if (isGrid) return '（父容器为 grid，建议调整 grid 属性）'
+  return ''
+}
+
+function changeToIntent(c: Change, isFlex: boolean, isGrid: boolean): string | null {
+  const prop = c.property ?? ''
+  const oldPx = Number.parseFloat(c.oldValue ?? '')
+  const newPx = Number.parseFloat(c.newValue ?? '')
+  const delta = newPx - oldPx
+
+  if ((prop === 'width' || prop === 'height') && !Number.isNaN(oldPx) && oldPx > 0) {
+    const pct = Math.round(Math.abs(delta) / oldPx * 100)
+    return `${sizeIntentLabel(prop, delta)} ${pct}%`
+  }
+  if ((prop === 'left' || prop === 'top') && !Number.isNaN(delta) && delta !== 0) {
+    const dir = offsetDir(prop, delta)
+    const hint = layoutHint(isFlex, isGrid, prop)
+    return `向${dir}偏移约 ${Math.abs(Math.round(delta))}px${hint}`
+  }
+  return null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class ChangeTracker {
   private changes: Change[] = []
@@ -117,40 +173,114 @@ class ChangeTracker {
   }
 
   exportAIPrompt(): string {
+    const groups = this.groupChangesByElement()
     const lines: string[] = [
       '# 设计修改需求',
       '',
-      `共 ${this.changes.length} 处样式/文本修改，${this.comments.length} 条评论。`,
+      `共 ${groups.size} 个元素有改动（${this.changes.length} 处属性），${this.comments.length} 条评论。`,
       '',
     ]
-
-    if (this.changes.length > 0) {
-      lines.push('## 样式与文本修改')
-      for (const c of this.changes) {
-        lines.push(`\n### ${c.componentName ?? c.selector}`)
-        if (c.sourceFile) lines.push(`源文件：\`${c.sourceFile}:${c.sourceLine}\``)
-        if (c.type === 'style') {
-          lines.push(`修改属性：\`${c.property}\``)
-          lines.push(`原值：\`${c.oldValue}\` → 新值：\`${c.newValue}\``)
-        }
-        if (c.type === 'text') {
-          lines.push(`原文：${c.oldValue}`)
-          lines.push(`新文：${c.newValue}`)
-        }
-      }
-    }
-
-    if (this.comments.length > 0) {
-      lines.push('\n## 评论与备注')
-      for (const c of this.comments) {
-        lines.push(`\n- **${c.componentName ?? c.selector}**：${c.text}`)
-      }
-    }
-
-    lines.push('\n---')
-    lines.push('请根据以上修改需求，给出对应的代码改动。')
-
+    this.appendStyleLines(lines, groups)
+    this.appendCommentLines(lines)
+    lines.push(
+      '\n---',
+      '请根据以上修改需求，优先按照元素的类名和父容器布局方式修改源码，属性变化数值仅供参考。',
+      '',
+      '⚠️ 注意：如果目标元素是通过列表或循环渲染的（如 Array.map、v-for、*ngFor 等），请先判断此修改是否仅针对特定实例。若是，请为该实例添加独立 class 或 inline style 覆盖，而非直接修改共享 class，以避免影响所有同类实例。',
+    )
     return lines.join('\n')
+  }
+
+  private groupChangesByElement(): Map<string, Change[]> {
+    const groups = new Map<string, Change[]>()
+    for (const c of this.changes) {
+      const key = `${c.selector}::${c.sourceFile ?? ''}:${c.sourceLine ?? ''}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(c)
+    }
+    return groups
+  }
+
+  private formatParentCtx(ctx: LayoutContext): string {
+    const parts: string[] = [ctx.display]
+    if (ctx.flexDirection) parts.push(ctx.flexDirection)
+    if (ctx.justifyContent) parts.push(`justify: ${ctx.justifyContent}`)
+    if (ctx.alignItems) parts.push(`align: ${ctx.alignItems}`)
+    if (ctx.gap) parts.push(`gap: ${ctx.gap}`)
+    if (ctx.gridTemplateColumns) parts.push(`columns: ${ctx.gridTemplateColumns}`)
+    if (ctx.position) parts.push(`position: ${ctx.position}`)
+    return parts.join('，')
+  }
+
+  private generateIntents(bucket: Change[]): string[] {
+    const ctx = bucket[0]?.parentLayoutCtx
+    const isFlex = ctx?.display === 'flex' || ctx?.display === 'inline-flex'
+    const isGrid = ctx?.display === 'grid' || ctx?.display === 'inline-grid'
+    return bucket
+      .filter((c) => c.type === 'style')
+      .flatMap((c) => {
+        const intent = changeToIntent(c, isFlex, isGrid)
+        return intent ? [intent] : []
+      })
+  }
+
+  private appendElementHeader(lines: string[], first: Change): void {
+    if (first.sourceFile) {
+      lines.push(`**源文件：** \`${first.sourceFile}:${first.sourceLine}\``)
+    }
+    if (first.classList && first.classList.length > 0) {
+      lines.push(`**元素类名：** \`${first.classList.join(' ')}\``)
+    }
+    const parentParts: string[] = []
+    if (first.parentClassList && first.parentClassList.length > 0) {
+      parentParts.push(`\`${first.parentClassList.join(' ')}\``)
+    }
+    if (first.parentLayoutCtx) {
+      parentParts.push(`布局：${this.formatParentCtx(first.parentLayoutCtx)}`)
+    }
+    if (parentParts.length > 0) {
+      lines.push(`**父容器：** ${parentParts.join(' | ')}`)
+    }
+  }
+
+  private appendPropertyList(lines: string[], bucket: Change[]): void {
+    lines.push('\n**属性变化（辅助参考）：**')
+    for (const c of bucket) {
+      if (c.type === 'style') {
+        lines.push(`- \`${c.property}\`：\`${c.oldValue}\` → \`${c.newValue}\``)
+      } else if (c.type === 'text') {
+        lines.push(`- 文本：\`${c.oldValue}\` → \`${c.newValue}\``)
+      }
+    }
+  }
+
+  private appendStyleLines(lines: string[], groups: Map<string, Change[]>): void {
+    if (groups.size === 0) return
+    lines.push('## 样式与文本修改')
+    for (const bucket of groups.values()) {
+      const first = bucket[0]
+      const heading = first.componentName
+        ? `${first.componentName} — \`${first.selector}\``
+        : `\`${first.selector}\``
+      lines.push(`\n### ${heading}`)
+      this.appendElementHeader(lines, first)
+
+      const intents = this.generateIntents(bucket)
+      if (intents.length > 0) {
+        lines.push('\n**修改意图：**')
+        intents.forEach((i) => lines.push(`- ${i}`))
+      }
+
+      this.appendPropertyList(lines, bucket)
+    }
+  }
+
+  private appendCommentLines(lines: string[]): void {
+    if (this.comments.length === 0) return
+    lines.push('\n## 评论与备注')
+    for (const c of this.comments) {
+      lines.push(`\n- **${c.componentName ?? c.selector}**：${c.text}`)
+    }
   }
 
   importJSON(json: string): void {

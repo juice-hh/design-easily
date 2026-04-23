@@ -7,7 +7,7 @@ import { changeTracker } from './changes'
 
 // ─── Comment bubble ───────────────────────────────────────────────────────────
 
-import { ACCENT, ACCENT_HOVER } from './tokens.js'
+import { ACCENT, ACCENT_HOVER, Z } from './tokens.js'
 
 const BUBBLE_STYLES = `
   :host { all: initial; }
@@ -20,6 +20,7 @@ const BUBBLE_STYLES = `
     cursor: pointer; user-select: none;
     box-shadow: 0 2px 8px rgba(0,0,0,0.35);
     transition: transform 0.1s, background 0.1s;
+    border: none; padding: 0; outline-offset: 2px;
   }
   .badge:hover { transform: scale(1.15); background: ${ACCENT_HOVER}; }
   .popup {
@@ -55,6 +56,9 @@ export class CommentBubble {
   private readonly shadow: ShadowRoot
   private readonly commentId: string
   private popupOpen = false
+  private readonly onDocClick: () => void
+  private readonly onScroll: () => void
+  private readonly onResize: () => void
 
   constructor(commentId: string, text: string, anchorEl: Element, index: number) {
     this.commentId = commentId
@@ -63,13 +67,13 @@ export class CommentBubble {
     this.shadow = this.host.attachShadow({ mode: 'open' })
     this.shadow.innerHTML = `
       <style>${BUBBLE_STYLES}</style>
-      <div class="badge">${index}</div>
-      <div class="popup" style="display:none">
+      <button class="badge" aria-label="评论 ${index}，点击展开">${index}</button>
+      <div class="popup" role="dialog" aria-label="评论详情" style="display:none">
         <div class="popup-text">${this.escapeHtml(text)}</div>
         <button class="del-btn">删除评论</button>
       </div>
     `
-    this.host.style.cssText = 'position: fixed; z-index: 2147483644; pointer-events: all;'
+    this.host.style.cssText = `position: fixed; z-index: ${Z.COMMENT_BUBBLE}; pointer-events: all;`
 
     this.shadow.querySelector('.badge')?.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -77,16 +81,16 @@ export class CommentBubble {
     })
     this.shadow.querySelector('.del-btn')?.addEventListener('click', () => this.remove())
 
-    // Click outside to close popup
-    document.addEventListener('click', () => {
-      if (this.popupOpen) this.closePopup()
-    })
+    this.onDocClick = () => { if (this.popupOpen) this.closePopup() }
+    this.onScroll = () => this.position(anchorEl)
+    this.onResize = () => this.position(anchorEl)
 
+    document.addEventListener('click', this.onDocClick)
     document.body.appendChild(this.host)
     this.position(anchorEl)
 
-    window.addEventListener('scroll', () => this.position(anchorEl), { passive: true })
-    window.addEventListener('resize', () => this.position(anchorEl), { passive: true })
+    window.addEventListener('scroll', this.onScroll, { passive: true })
+    window.addEventListener('resize', this.onResize, { passive: true })
   }
 
   private togglePopup(): void {
@@ -132,7 +136,7 @@ export class CommentBubble {
       position: 'fixed',
       top: `${rect.top - 10}px`,
       left: `${hostLeft}px`,
-      zIndex: '2147483644',
+      zIndex: String(Z.COMMENT_BUBBLE),
     })
 
     const popup = this.shadow.querySelector<HTMLElement>('.popup')
@@ -149,6 +153,9 @@ export class CommentBubble {
 
   remove(): void {
     changeTracker.removeComment(this.commentId)
+    document.removeEventListener('click', this.onDocClick)
+    window.removeEventListener('scroll', this.onScroll)
+    window.removeEventListener('resize', this.onResize)
     this.host.remove()
   }
 }
@@ -170,7 +177,7 @@ const DIALOG_STYLES = `
     padding: 12px 14px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.06) inset;
     width: 260px;
-    z-index: 2147483645;
+    z-index: ${Z.DIALOG};
   }
   textarea {
     width: 100%;
@@ -269,7 +276,7 @@ function getOrCreateCommentHighlight(): HTMLElement {
   Object.assign(el.style, {
     position: 'fixed',
     pointerEvents: 'none',
-    zIndex: '2147483643',
+    zIndex: String(Z.COMMENT_HIGHLIGHT),
     display: 'none',
     outline: `2px dashed ${COMMENT_HOVER_COLOR}`,
     outlineOffset: '2px',

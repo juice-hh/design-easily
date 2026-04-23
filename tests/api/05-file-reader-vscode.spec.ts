@@ -151,7 +151,7 @@ describe('readFullFile', () => {
 // ── vscode tests ──────────────────────────────────────────────────────────────
 
 vi.mock('node:child_process', () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
 }))
 
 describe('openInVSCode', () => {
@@ -159,36 +159,41 @@ describe('openInVSCode', () => {
     vi.resetModules()
   })
 
-  it('resolves when exec succeeds', async () => {
-    const { exec } = await import('node:child_process')
-    vi.mocked(exec).mockImplementation((_cmd, cb) => {
-      cb?.(null, '', '')
-      return {} as ReturnType<typeof exec>
+  it('resolves when execFile succeeds', async () => {
+    const { execFile } = await import('node:child_process')
+    vi.mocked(execFile).mockImplementation((_cmd, _args, cb) => {
+      (cb as (err: null) => void)?.(null)
+      return {} as ReturnType<typeof execFile>
     })
     const { openInVSCode } = await import('../../server/src/vscode.js')
     await expect(openInVSCode('/src/App.tsx', 42)).resolves.toBeUndefined()
   })
 
-  it('rejects with a descriptive error when exec fails', async () => {
-    const { exec } = await import('node:child_process')
-    vi.mocked(exec).mockImplementation((_cmd, cb) => {
-      cb?.(new Error('command not found: code'), '', '')
-      return {} as ReturnType<typeof exec>
+  it('rejects with a descriptive error when execFile fails', async () => {
+    const { execFile } = await import('node:child_process')
+    vi.mocked(execFile).mockImplementation((_cmd, _args, cb) => {
+      (cb as (err: Error) => void)?.(new Error('command not found: code'))
+      return {} as ReturnType<typeof execFile>
     })
     const { openInVSCode } = await import('../../server/src/vscode.js')
     await expect(openInVSCode('/src/App.tsx', 10)).rejects.toThrow('Failed to open VS Code')
   })
 
-  it('builds the correct --goto command', async () => {
-    const { exec } = await import('node:child_process')
-    let capturedCmd = ''
-    vi.mocked(exec).mockImplementation((cmd, cb) => {
-      capturedCmd = cmd as string
-      cb?.(null, '', '')
-      return {} as ReturnType<typeof exec>
+  it('passes correct --goto args to execFile', async () => {
+    const { execFile } = await import('node:child_process')
+    let capturedArgs: string[] = []
+    vi.mocked(execFile).mockImplementation((_cmd, args, cb) => {
+      capturedArgs = args as string[]
+      ;(cb as (err: null) => void)?.(null)
+      return {} as ReturnType<typeof execFile>
     })
     const { openInVSCode } = await import('../../server/src/vscode.js')
     await openInVSCode('/src/MyComp.tsx', 99)
-    expect(capturedCmd).toBe('code --goto "/src/MyComp.tsx:99"')
+    expect(capturedArgs).toEqual(['--goto', '/src/MyComp.tsx:99'])
+  })
+
+  it('rejects for non-absolute paths', async () => {
+    const { openInVSCode } = await import('../../server/src/vscode.js')
+    await expect(openInVSCode('relative/path.tsx', 1)).rejects.toThrow('Invalid file path')
   })
 })

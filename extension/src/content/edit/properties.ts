@@ -4,6 +4,8 @@
  */
 
 import { getLocalFonts } from './fonts.js'
+import { buildUniqueSelector } from './selector.js'
+import { captureElementInfo } from './element-info.js'
 import { changeTracker } from '../changes.js'
 import { extractFiberInfo } from '../fiber.js'
 import { PANEL_STYLES } from './properties-styles.js'
@@ -17,6 +19,17 @@ import {
   renderStrokeSection,
   renderTextSection,
 } from './properties-sections.js'
+import {
+  bindPositionEvents,
+  bindAutoLayoutEvents,
+  bindAppearanceEvents,
+  bindFillStrokeEvents,
+  bindTextEvents,
+} from './properties-bind.js'
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
 
 export interface StyleEdit {
   property: string
@@ -57,6 +70,7 @@ export class PropertiesPanel {
   async show(target: Element): Promise<void> {
     this.target = target
     this.resolvedSource = null
+    this.syncComponent = false   // reset per-selection; don't bleed across elements
     this.fonts = await getLocalFonts()
     this.host.style.display = ''
     this.render()
@@ -85,7 +99,7 @@ export class PropertiesPanel {
   private render(): void {
     if (!this.target) return
     const el = this.target
-    const computed = window.getComputedStyle(el)
+    const computed = globalThis.getComputedStyle(el)
     const fiber = extractFiberInfo(el)
     const name = fiber.componentName ?? el.tagName.toLowerCase()
 
@@ -123,7 +137,7 @@ export class PropertiesPanel {
       <div class="panel">
         <div class="panel-header">
           <div class="title">${name}</div>
-          <div class="subtitle">&lt;${el.tagName.toLowerCase()}&gt;${el.id ? ' #' + el.id : ''}${el.classList[0] ? ' .' + el.classList[0] : ''}</div>
+          <div class="subtitle">&lt;${escapeHtml(el.tagName.toLowerCase())}&gt;${el.id ? ' #' + escapeHtml(el.id) : ''}${el.classList[0] ? ' .' + escapeHtml(el.classList[0]) : ''}</div>
         </div>
         <div class="mode-tabs">
           <button class="mode-tab${this.activeTab === 'style' ? ' active' : ''}" data-tab="style">样式</button>
@@ -307,34 +321,10 @@ export class PropertiesPanel {
   private apply(prop: string, value: string): void {
     const el = this.target as HTMLElement
     const old = el.style.getPropertyValue(cssVar(prop)) ||
-                window.getComputedStyle(el).getPropertyValue(cssVar(prop))
+                globalThis.getComputedStyle(el).getPropertyValue(cssVar(prop))
     el.style.setProperty(cssVar(prop), value)
     this.recordChange(prop, old, value)
     this.notifyChange({ property: prop, value })
-  }
-
-  private bindNum(id: string, prop: string, suffix = 'px'): void {
-    this.shadow.getElementById(id)?.addEventListener('change', (e) => {
-      this.apply(prop, (e.target as HTMLInputElement).value + suffix)
-    })
-  }
-
-  private bindColorPair(prefix: string, cssProp: string): void {
-    const picker = this.shadow.getElementById(`${prefix}-picker`) as HTMLInputElement | null
-    const hexIn  = this.shadow.getElementById(`${prefix}-hex`) as HTMLInputElement | null
-
-    const apply = (hex: string): void => {
-      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return
-      const bg = this.shadow.querySelector<HTMLDivElement>(`#${prefix}-picker`)
-        ?.closest('.cswatch')?.querySelector<HTMLDivElement>('.cswatch-bg')
-      if (picker) picker.value = hex
-      if (hexIn)  hexIn.value = hex.replace('#', '').toUpperCase()
-      if (bg)     bg.style.background = hex
-      this.apply(cssProp, hex)
-    }
-
-    picker?.addEventListener('input', () => apply(picker.value))
-    hexIn?.addEventListener('change', () => apply('#' + hexIn.value))
   }
 
   // ── Event binding ──────────────────────────────────────────
@@ -342,179 +332,18 @@ export class PropertiesPanel {
   private bindEvents(): void {
     const el = this.target as HTMLElement
     const sh = this.shadow
+    const apply = this.apply.bind(this)
+    const render = this.render.bind(this)
 
-    this.bindPositionEvents(el, sh)
-    this.bindAutoLayoutEvents(el, sh)
-    this.bindAppearanceEvents(sh)
-    this.bindFillStrokeEvents(sh)
-    this.bindTextEvents(el, sh)
+    bindPositionEvents(sh, el, apply, render)
+    bindAutoLayoutEvents(sh, el, apply, render)
+    bindAppearanceEvents(sh, el, apply, render)
+    bindFillStrokeEvents(sh, apply, render)
+    bindTextEvents(sh, el, apply, render, this.recordChange.bind(this), this.notifyChange.bind(this))
 
     sh.getElementById('de-sync')?.addEventListener('change', (e) => {
       this.syncComponent = (e.target as HTMLInputElement).checked
     })
-
-  }
-
-  private bindPositionEvents(el: HTMLElement, sh: ShadowRoot): void {
-    // Horizontal alignment via margin
-    const hAlignMap: Record<string, () => void> = {
-      'al-left':  () => { this.apply('marginLeft', '');     this.apply('marginRight', 'auto') },
-      'al-ch':    () => { this.apply('marginLeft', 'auto'); this.apply('marginRight', 'auto') },
-      'al-right': () => { this.apply('marginLeft', 'auto'); this.apply('marginRight', '') },
-    }
-    Object.entries(hAlignMap).forEach(([id, fn]) => {
-      sh.getElementById(id)?.addEventListener('click', () => { fn(); this.render() })
-    })
-
-    // Vertical alignment via align-self
-    const vAlignMap: Record<string, string> = {
-      'al-top': 'flex-start', 'al-mid': 'center', 'al-bottom': 'flex-end',
-    }
-    Object.entries(vAlignMap).forEach(([id, val]) => {
-      sh.getElementById(id)?.addEventListener('click', () => { this.apply('alignSelf', val); this.render() })
-    })
-
-    this.bindNum('pos-x', 'left')
-    this.bindNum('pos-y', 'top')
-
-    sh.getElementById('pos-rot')?.addEventListener('change', (e) => {
-      const deg = (e.target as HTMLInputElement).value
-      this.apply('transform', `rotate(${deg}deg)`)
-    })
-
-    sh.getElementById('btn-fliph')?.addEventListener('click', () => {
-      const cur = window.getComputedStyle(el).transform
-      this.apply('transform', cur.includes('scaleX(-1)') ? '' : 'scaleX(-1)')
-    })
-    sh.getElementById('btn-flipv')?.addEventListener('click', () => {
-      const cur = window.getComputedStyle(el).transform
-      this.apply('transform', cur.includes('scaleY(-1)') ? '' : 'scaleY(-1)')
-    })
-  }
-
-  private bindAutoLayoutEvents(el: HTMLElement, sh: ShadowRoot): void {
-    sh.getElementById('al-toggle')?.addEventListener('click', () => {
-      const isFlex = window.getComputedStyle(el).display === 'flex'
-      this.apply('display', isFlex ? '' : 'flex')
-      this.render()
-    })
-
-    const flowMap: Record<string, () => void> = {
-      'flow-row':     () => { this.apply('flexDirection', 'row');    this.apply('flexWrap', 'nowrap') },
-      'flow-col':     () => { this.apply('flexDirection', 'column'); this.apply('flexWrap', 'nowrap') },
-      'flow-rowwrap': () => { this.apply('flexDirection', 'row');    this.apply('flexWrap', 'wrap') },
-      'flow-rev': () => {
-        const cur = window.getComputedStyle(el).flexDirection
-        const rev = cur.includes('reverse') ? cur.replace('-reverse', '') : cur + '-reverse'
-        this.apply('flexDirection', rev)
-      },
-    }
-    Object.entries(flowMap).forEach(([id, fn]) => {
-      sh.getElementById(id)?.addEventListener('click', () => { fn(); this.render() })
-    })
-
-    const applyResize = (axis: 'w' | 'h'): void => {
-      const numEl  = sh.getElementById(`resize-${axis}`) as HTMLInputElement | null
-      const modeEl = sh.getElementById(`resize-${axis}-mode`) as HTMLSelectElement | null
-      if (!numEl || !modeEl) return
-      const prop = axis === 'w' ? 'width' : 'height'
-      switch (modeEl.value) {
-        case 'hug':  this.apply(prop, 'fit-content'); this.apply('flex', '');  break
-        case 'fill': this.apply(prop, '100%');        this.apply('flex', '1'); break
-        default:     this.apply(prop, numEl.value + 'px'); this.apply('flex', '')
-      }
-    }
-    sh.getElementById('resize-w')?.addEventListener('change', () => applyResize('w'))
-    sh.getElementById('resize-h')?.addEventListener('change', () => applyResize('h'))
-    sh.getElementById('resize-w-mode')?.addEventListener('change', () => applyResize('w'))
-    sh.getElementById('resize-h-mode')?.addEventListener('change', () => applyResize('h'))
-
-    sh.querySelectorAll<HTMLButtonElement>('.agbtn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        this.apply('alignItems',    btn.dataset['ai'] ?? 'flex-start')
-        this.apply('justifyContent', btn.dataset['jc'] ?? 'flex-start')
-        this.render()
-      })
-    })
-
-    this.bindNum('al-gap', 'gap')
-    sh.getElementById('pad-h')?.addEventListener('change', (e) => {
-      const v = (e.target as HTMLInputElement).value + 'px'
-      this.apply('paddingLeft', v); this.apply('paddingRight', v)
-    })
-    sh.getElementById('pad-v')?.addEventListener('change', (e) => {
-      const v = (e.target as HTMLInputElement).value + 'px'
-      this.apply('paddingTop', v); this.apply('paddingBottom', v)
-    })
-    sh.getElementById('al-clip')?.addEventListener('change', (e) => {
-      this.apply('overflow', (e.target as HTMLInputElement).checked ? 'hidden' : 'visible')
-    })
-  }
-
-  private bindAppearanceEvents(sh: ShadowRoot): void {
-    sh.getElementById('ap-opacity')?.addEventListener('change', (e) => {
-      const pct = parseFloat((e.target as HTMLInputElement).value)
-      this.apply('opacity', String(pct / 100))
-    })
-    this.bindNum('ap-radius', 'borderRadius')
-    sh.getElementById('btn-corner-ind')?.addEventListener('click', () => this.render())
-    ;(['ap-tl', 'ap-tr', 'ap-br', 'ap-bl'] as const).forEach((id, i) => {
-      const props = ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius']
-      this.bindNum(id, props[i] as string)
-    })
-    sh.getElementById('btn-vis')?.addEventListener('click', () => {
-      const el = this.target as HTMLElement
-      const cur = window.getComputedStyle(el).visibility
-      this.apply('visibility', cur === 'hidden' ? 'visible' : 'hidden')
-    })
-  }
-
-  private bindFillStrokeEvents(sh: ShadowRoot): void {
-    this.bindColorPair('fill', 'backgroundColor')
-    sh.getElementById('fill-add')?.addEventListener('click', () => {
-      this.apply('backgroundColor', '#ffffff'); this.render()
-    })
-
-    this.bindColorPair('stroke', 'borderColor')
-    this.bindNum('stroke-w', 'borderWidth')
-    sh.getElementById('stroke-style')?.addEventListener('change', (e) => {
-      this.apply('borderStyle', (e.target as HTMLSelectElement).value)
-    })
-    sh.getElementById('stroke-add')?.addEventListener('click', () => {
-      this.apply('borderWidth', '1px')
-      this.apply('borderStyle', 'solid')
-      this.apply('borderColor', '#000000')
-      this.render()
-    })
-  }
-
-  private bindTextEvents(el: HTMLElement, sh: ShadowRoot): void {
-    sh.getElementById('txt-font')?.addEventListener('change', (e) => {
-      this.apply('fontFamily', (e.target as HTMLSelectElement).value)
-    })
-    this.bindNum('txt-size', 'fontSize')
-    sh.getElementById('txt-weight')?.addEventListener('change', (e) => {
-      this.apply('fontWeight', (e.target as HTMLSelectElement).value)
-    })
-    this.bindNum('txt-lh', 'lineHeight')
-    this.bindNum('txt-ls', 'letterSpacing')
-    this.bindColorPair('txt-color', 'color')
-
-    sh.querySelectorAll<HTMLButtonElement>('[data-ta]').forEach((b) => {
-      b.addEventListener('click', () => {
-        this.apply('textAlign', b.dataset['ta'] ?? 'left'); this.render()
-      })
-    })
-
-    const textarea = sh.getElementById('txt-content') as HTMLTextAreaElement | null
-    if (textarea) {
-      textarea.addEventListener('change', () => {
-        const old = el.textContent?.trim() ?? ''
-        el.textContent = textarea.value
-        this.recordChange('textContent', old, textarea.value)
-        this.notifyChange({ property: 'textContent', value: textarea.value })
-      })
-    }
   }
 
   // ── Bookkeeping ────────────────────────────────────────────
@@ -522,9 +351,8 @@ export class PropertiesPanel {
   private recordChange(property: string, oldValue: string, newValue: string): void {
     if (!this.target) return
     const fiber = extractFiberInfo(this.target)
-    const sel = this.target.id
-      ? `#${this.target.id}`
-      : `${this.target.tagName.toLowerCase()}${this.target.classList[0] ? '.' + this.target.classList[0] : ''}`
+    const sel = buildUniqueSelector(this.target)
+    const { classList, parentClassList, parentLayoutCtx } = captureElementInfo(this.target)
     changeTracker.addChange({
       type: property === 'textContent' ? 'text' : 'style',
       selector: sel,
@@ -534,6 +362,9 @@ export class PropertiesPanel {
       property,
       oldValue,
       newValue,
+      classList,
+      parentClassList,
+      parentLayoutCtx,
     })
   }
 

@@ -2,7 +2,7 @@
  * Edit mode selection overlay — purple border + resize handles + drag handle.
  */
 
-import { ACCENT } from '../tokens.js'
+import { ACCENT, Z } from '../tokens.js'
 
 export const OVERLAY_ID = 'de-edit-overlay'
 
@@ -10,7 +10,7 @@ const OVERLAY_STYLES = `
   #de-edit-overlay {
     position: fixed;
     pointer-events: none;
-    z-index: 2147483641;
+    z-index: ${Z.EDIT_OVERLAY};
     box-sizing: border-box;
     display: none;
   }

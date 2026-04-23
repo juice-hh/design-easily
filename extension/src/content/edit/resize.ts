@@ -2,9 +2,11 @@
  * Resize handles — drag any corner handle to resize the selected element.
  */
 
-import { getOrCreateOverlay, positionOverlay } from './overlay.js'
+import { positionOverlay } from './overlay.js'
 import { changeTracker } from '../changes.js'
 import { extractFiberInfo } from '../fiber.js'
+import { buildUniqueSelector } from './selector.js'
+import { captureElementInfo } from './element-info.js'
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br'
 
@@ -20,6 +22,8 @@ interface DragStart {
   readonly mouseY: number
   readonly rect: DOMRect
   readonly corner: Corner
+  readonly startLeft: number
+  readonly startTop: number
 }
 
 function identifyCorner(handle: Element): Corner | null {
@@ -27,13 +31,6 @@ function identifyCorner(handle: Element): Corner | null {
     if (handle.matches(selector)) return corner as Corner
   }
   return null
-}
-
-function buildSelector(el: Element): string {
-  if (el.id) return `#${el.id}`
-  const tag = el.tagName.toLowerCase()
-  const firstClass = el.classList[0]
-  return firstClass ? `${tag}.${firstClass}` : tag
 }
 
 function ensurePositioned(target: HTMLElement): void {
@@ -44,7 +41,7 @@ function ensurePositioned(target: HTMLElement): void {
 }
 
 function applyResize(target: HTMLElement, start: DragStart, dx: number, dy: number): void {
-  const { corner, rect } = start
+  const { corner, rect, startLeft, startTop } = start
 
   switch (corner) {
     case 'br':
@@ -54,18 +51,18 @@ function applyResize(target: HTMLElement, start: DragStart, dx: number, dy: numb
     case 'bl':
       target.style.width = `${rect.width - dx}px`
       target.style.height = `${rect.height + dy}px`
-      target.style.left = `${(parseInt(window.getComputedStyle(target).left) || 0) + dx}px`
+      target.style.left = `${startLeft + dx}px`
       break
     case 'tr':
       target.style.width = `${rect.width + dx}px`
       target.style.height = `${rect.height - dy}px`
-      target.style.top = `${(parseInt(window.getComputedStyle(target).top) || 0) + dy}px`
+      target.style.top = `${startTop + dy}px`
       break
     case 'tl':
       target.style.width = `${rect.width - dx}px`
       target.style.height = `${rect.height - dy}px`
-      target.style.left = `${(parseInt(window.getComputedStyle(target).left) || 0) + dx}px`
-      target.style.top = `${(parseInt(window.getComputedStyle(target).top) || 0) + dy}px`
+      target.style.left = `${startLeft + dx}px`
+      target.style.top = `${startTop + dy}px`
       break
   }
 }
@@ -73,7 +70,8 @@ function applyResize(target: HTMLElement, start: DragStart, dx: number, dy: numb
 function recordResizeChanges(target: Element, startRect: DOMRect): void {
   const endRect = target.getBoundingClientRect()
   const fiber = extractFiberInfo(target)
-  const selector = buildSelector(target)
+  const selector = buildUniqueSelector(target)
+  const { classList, parentClassList, parentLayoutCtx } = captureElementInfo(target)
 
   const base = {
     type: 'style' as const,
@@ -81,6 +79,9 @@ function recordResizeChanges(target: Element, startRect: DOMRect): void {
     componentName: fiber.componentName,
     sourceFile: fiber.sourceFile,
     sourceLine: fiber.sourceLine,
+    classList,
+    parentClassList,
+    parentLayoutCtx,
   }
 
   if (Math.round(startRect.width) !== Math.round(endRect.width)) {
@@ -117,11 +118,14 @@ export function makeResizable(overlay: HTMLElement, target: Element): () => void
 
     ensurePositioned(htmlTarget)
 
+    const cs = globalThis.getComputedStyle(htmlTarget)
     dragStart = {
       mouseX: me.clientX,
       mouseY: me.clientY,
       rect: target.getBoundingClientRect(),
       corner,
+      startLeft: Number.parseFloat(cs.left) || 0,
+      startTop: Number.parseFloat(cs.top) || 0,
     }
 
     document.addEventListener('mousemove', onMouseMove)

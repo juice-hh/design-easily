@@ -3,8 +3,15 @@
  * Auto-reconnects with exponential backoff.
  */
 
-const SERVER_PORT = 3771
-const WS_URL = `ws://127.0.0.1:${SERVER_PORT}`
+import { DEFAULT_WS_PORT } from './tokens.js'
+
+async function getWsUrl(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get({ port: DEFAULT_WS_PORT }, (items) => {
+      resolve(`ws://127.0.0.1:${(items as { port: number }).port}`)
+    })
+  })
+}
 
 type MessageHandler = (data: ServerMessage) => void
 
@@ -46,9 +53,12 @@ class WSClient {
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.CONNECTING) return
+    getWsUrl().then((url) => this.connectToUrl(url)).catch(() => this.scheduleReconnect())
+  }
 
+  private connectToUrl(url: string): void {
     try {
-      this.ws = new WebSocket(WS_URL)
+      this.ws = new WebSocket(url)
 
       this.ws.onopen = () => {
         this.connected = true

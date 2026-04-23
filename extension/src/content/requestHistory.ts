@@ -30,7 +30,7 @@ class RequestHistory {
   }
 
   getAll(): DesignEntry[] {
-    return this.entries
+    return [...this.entries]
   }
 
   pendingCount(): number {

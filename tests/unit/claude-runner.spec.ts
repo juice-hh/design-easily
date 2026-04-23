@@ -353,7 +353,7 @@ describe('claude-runner: runClaudeOnRequest', () => {
 
       runClaudeOnRequest(req, vi.fn(), complete, broadcast)
 
-      vi.advanceTimersByTime(3 * 60 * 1000 + 100)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 100)
 
       expect(proc.kill).toHaveBeenCalledWith('SIGTERM')
       expect(complete).toHaveBeenCalledWith('req-1', expect.objectContaining({ status: 'failed', error: expect.stringContaining('超时') }))
@@ -382,7 +382,7 @@ describe('claude-runner: runClaudeOnRequest', () => {
       proc.stdout.emit('data', Buffer.from('done\n'))
       proc.emit('close', 0)
 
-      vi.advanceTimersByTime(3 * 60 * 1000 + 100)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 100)
 
       const failBroadcasts = broadcast.mock.calls.filter(
         (c) => c[0].type === 'design:failed',

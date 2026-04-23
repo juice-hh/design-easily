@@ -9,11 +9,13 @@ function ico(name: string): string { return ICO[name] ?? '' }
 function ibtn(icon: string, id: string, opts: { title?: string; active?: boolean; cls?: string } = {}): string {
   const active = opts.active ? ' active' : ''
   const cls = opts.cls ? ' ' + opts.cls : ''
-  return `<button class="ibtn${active}${cls}" id="${id}" title="${opts.title ?? ''}">${ico(icon)}</button>`
+  const labelAttr = opts.title ? ` aria-label="${opts.title}"` : ''
+  return `<button class="ibtn${active}${cls}" id="${id}" title="${opts.title ?? ''}"${labelAttr}>${ico(icon)}</button>`
 }
 
 function sbtn(icon: string, id: string, active: boolean, title = ''): string {
-  return `<button class="sbtn${active ? ' active' : ''}" id="${id}" title="${title}">${ico(icon)}</button>`
+  const labelAttr = title ? ` aria-label="${title}"` : ''
+  return `<button class="sbtn${active ? ' active' : ''}" id="${id}" title="${title}"${labelAttr}>${ico(icon)}</button>`
 }
 
 function field(pre: string, inputHtml: string, suf = ''): string {
@@ -21,9 +23,10 @@ function field(pre: string, inputHtml: string, suf = ''): string {
   return `<div class="field"><span class="field-pre">${pre}</span>${inputHtml}${sufHtml}</div>`
 }
 
-function numInput(id: string, value: string, min = '', step = '1'): string {
+function numInput(id: string, value: string, min = '', step = '1', ariaLabel = ''): string {
   const minAttr = min !== '' ? ` min="${min}"` : ''
-  return `<input type="number" id="${id}" value="${value}"${minAttr} step="${step}" />`
+  const labelAttr = ariaLabel ? ` aria-label="${ariaLabel}"` : ''
+  return `<input type="number" id="${id}" value="${value}"${minAttr} step="${step}"${labelAttr} />`
 }
 
 export function pxVal(val: string): string {
@@ -96,12 +99,12 @@ export function renderPositionSection(computed: CSSStyleDeclaration): string {
       ${isAbsOrFixed ? `
       <span class="flabel mt6">坐标</span>
       <div class="row mt4">
-        ${field('X', numInput('pos-x', pxVal(computed.left)))}
-        ${field('Y', numInput('pos-y', pxVal(computed.top)))}
+        ${field('X', numInput('pos-x', pxVal(computed.left), '', '1', 'X 坐标'))}
+        ${field('Y', numInput('pos-y', pxVal(computed.top), '', '1', 'Y 坐标'))}
       </div>` : ''}
       <span class="flabel mt6">旋转</span>
       <div class="row mt4">
-        ${field(ico('rotate'), numInput('pos-rot', rot), '°')}
+        ${field(ico('rotate'), numInput('pos-rot', rot, '', '1', '旋转角度'), '°')}
         ${ibtn('flipH', 'btn-fliph', { title: '水平翻转' })}
         ${ibtn('flipV', 'btn-flipv', { title: '垂直翻转' })}
       </div>
@@ -114,6 +117,87 @@ function getAlignGridActive(jc: string, ai: string): string {
   return `${row}-${col}`
 }
 
+function resizeMode(dim: string, flexGrow: string): 'hug' | 'fill' | 'fixed' {
+  if (dim.includes('fit-content')) return 'hug'
+  if (flexGrow === '1') return 'fill'
+  return 'fixed'
+}
+
+function buildGridCells(activeGrid: string): string {
+  const AI_LABELS = ['顶对齐', '垂直居中', '底对齐']
+  const JC_LABELS = ['左对齐', '水平居中', '右对齐']
+  const AI_VALS = ['flex-start', 'center', 'flex-end']
+  const JC_VALS = ['flex-start', 'center', 'flex-end']
+  return [0, 1, 2].flatMap((r) =>
+    [0, 1, 2].map((c) => {
+      const active = activeGrid === `${r}-${c}`
+      const cellLabel = `${AI_LABELS[r] ?? ''}+${JC_LABELS[c] ?? ''}`
+      return `<button class="agbtn${active ? ' active' : ''}" data-ai="${AI_VALS[r]}" data-jc="${JC_VALS[c]}" title="${cellLabel}" aria-label="${cellLabel}"><div class="agdot"></div></button>`
+    })
+  ).join('')
+}
+
+function sizeSelectOptions(mode: string): string {
+  return `<option value="fixed" ${mode === 'fixed' ? 'selected' : ''}>固定</option>
+          <option value="hug"   ${mode === 'hug'   ? 'selected' : ''}>包裹</option>
+          <option value="fill"  ${mode === 'fill'  ? 'selected' : ''}>填满</option>`
+}
+
+function buildFlexBody(
+  computed: CSSStyleDeclaration,
+  isRow: boolean, isCol: boolean, isRowWrap: boolean, isGrid: boolean,
+): string {
+  const w = computed.width
+  const h = computed.height
+  const wMode = resizeMode(w, computed.flexGrow)
+  const hMode = resizeMode(h, computed.flexGrow)
+  const gap  = pxVal(computed.gap || computed.columnGap || '0')
+  const pl   = pxVal(computed.paddingLeft)
+  const pt   = pxVal(computed.paddingTop)
+  const clip = computed.overflow === 'hidden' || computed.overflow === 'clip'
+  const jc = computed.justifyContent || 'flex-start'
+  const ai = computed.alignItems || 'flex-start'
+  const gridCells = buildGridCells(getAlignGridActive(jc, ai))
+  return `
+    <span class="flabel">方向</span>
+    <div class="row mt4">
+      <div class="seg">
+        ${sbtn('flowRow',     'flow-row',     isRow,     '横向')}
+        ${sbtn('flowCol',     'flow-col',     isCol,     '纵向')}
+        ${sbtn('flowRowWrap', 'flow-rowwrap', isRowWrap, '横向换行')}
+        ${sbtn('flowGrid',    'flow-grid',    isGrid,    '网格')}
+      </div>
+      ${ibtn('flowReverse', 'flow-rev', { title: '反向' })}
+    </div>
+    <span class="flabel mt6">尺寸</span>
+    <div class="row mt4">
+      ${field('W', numInput('resize-w', pxVal(w), '0', '1', '宽度'))}
+      <select class="msel" id="resize-w-mode" style="width:60px">${sizeSelectOptions(wMode)}</select>
+    </div>
+    <div class="row mt4">
+      ${field('H', numInput('resize-h', pxVal(h), '0', '1', '高度'))}
+      <select class="msel" id="resize-h-mode" style="width:60px">${sizeSelectOptions(hMode)}</select>
+    </div>
+    <span class="flabel mt6">对齐 &amp; Gap</span>
+    <div class="row mt4" style="align-items:flex-start">
+      <div class="algrid">${gridCells}</div>
+      <div class="divider-v" style="margin:3px 2px 0"></div>
+      <div class="gap-block">
+        ${field(ico('gapH'), numInput('al-gap', gap, '0', '1', 'Gap 间距'))}
+      </div>
+    </div>
+    <span class="flabel mt6">Padding</span>
+    <div class="row mt4">
+      ${field(ico('paddingH'), numInput('pad-h', pl, '0', '1', '水平内边距'), 'px')}
+      ${field(ico('paddingV'), numInput('pad-v', pt, '0', '1', '垂直内边距'), 'px')}
+      ${ibtn('paddingInd', 'btn-pad-ind', { title: '独立设置' })}
+    </div>
+    <label class="cbrow mt6">
+      <input type="checkbox" id="al-clip" ${clip ? 'checked' : ''} />
+      <span class="cblabel">裁剪内容</span>
+    </label>`
+}
+
 export function renderAutoLayoutSection(computed: CSSStyleDeclaration): string {
   const isFlex = computed.display === 'flex' || computed.display === 'inline-flex'
   const dir = computed.flexDirection || 'row'
@@ -124,82 +208,15 @@ export function renderAutoLayoutSection(computed: CSSStyleDeclaration): string {
   const isRowWrap = dir === 'row' && wrap === 'wrap'
   const isGrid    = computed.display === 'grid'
 
-  const w = computed.width; const h = computed.height
-  const wMode = w.includes('fit-content') ? 'hug' : computed.flexGrow === '1' ? 'fill' : 'fixed'
-  const hMode = h.includes('fit-content') ? 'hug' : computed.flexGrow === '1' ? 'fill' : 'fixed'
-
-  const gap  = pxVal(computed.gap || computed.columnGap || '0')
-  const pl   = pxVal(computed.paddingLeft)
-  const pt   = pxVal(computed.paddingTop)
-  const clip = computed.overflow === 'hidden' || computed.overflow === 'clip'
-
-  const jc = computed.justifyContent || 'flex-start'
-  const ai = computed.alignItems || 'flex-start'
-  const activeGrid = getAlignGridActive(jc, ai)
-
-  const gridCells = [0, 1, 2].flatMap((r) =>
-    [0, 1, 2].map((c) => {
-      const active = activeGrid === `${r}-${c}`
-      const aiVal = ['flex-start', 'center', 'flex-end'][r] ?? 'flex-start'
-      const jcVal = ['flex-start', 'center', 'flex-end'][c] ?? 'flex-start'
-      return `<button class="agbtn${active ? ' active' : ''}" data-ai="${aiVal}" data-jc="${jcVal}"><div class="agdot"></div></button>`
-    })
-  ).join('')
-
   return `
     <div class="section">
       <div class="sec-hd">
         <span class="sec-title">自动布局</span>
-        <button class="al-badge ${isFlex ? 'on' : 'off'}" id="al-toggle">
+        <button class="al-badge ${isFlex ? 'on' : 'off'}" id="al-toggle" aria-label="${isFlex ? '关闭自动布局' : '启用自动布局'}">
           ${ico('flowRow')}${isFlex ? '已启用' : '启用'}
         </button>
       </div>
-      ${isFlex ? `
-      <span class="flabel">方向</span>
-      <div class="row mt4">
-        <div class="seg">
-          ${sbtn('flowRow',     'flow-row',     isRow,     '横向')}
-          ${sbtn('flowCol',     'flow-col',     isCol,     '纵向')}
-          ${sbtn('flowRowWrap', 'flow-rowwrap', isRowWrap, '横向换行')}
-          ${sbtn('flowGrid',    'flow-grid',    isGrid,    '网格')}
-        </div>
-        ${ibtn('flowReverse', 'flow-rev', { title: '反向' })}
-      </div>
-      <span class="flabel mt6">尺寸</span>
-      <div class="row mt4">
-        ${field('W', numInput('resize-w', pxVal(w), '0'))}
-        <select class="msel" id="resize-w-mode" style="width:60px">
-          <option value="fixed" ${wMode === 'fixed' ? 'selected' : ''}>固定</option>
-          <option value="hug"   ${wMode === 'hug'   ? 'selected' : ''}>包裹</option>
-          <option value="fill"  ${wMode === 'fill'  ? 'selected' : ''}>填满</option>
-        </select>
-      </div>
-      <div class="row mt4">
-        ${field('H', numInput('resize-h', pxVal(h), '0'))}
-        <select class="msel" id="resize-h-mode" style="width:60px">
-          <option value="fixed" ${hMode === 'fixed' ? 'selected' : ''}>固定</option>
-          <option value="hug"   ${hMode === 'hug'   ? 'selected' : ''}>包裹</option>
-          <option value="fill"  ${hMode === 'fill'  ? 'selected' : ''}>填满</option>
-        </select>
-      </div>
-      <span class="flabel mt6">对齐 &amp; Gap</span>
-      <div class="row mt4" style="align-items:flex-start">
-        <div class="algrid">${gridCells}</div>
-        <div class="divider-v" style="margin:3px 2px 0"></div>
-        <div class="gap-block">
-          ${field(ico('gapH'), numInput('al-gap', gap, '0'))}
-        </div>
-      </div>
-      <span class="flabel mt6">Padding</span>
-      <div class="row mt4">
-        ${field(ico('paddingH'), numInput('pad-h', pl, '0'), 'px')}
-        ${field(ico('paddingV'), numInput('pad-v', pt, '0'), 'px')}
-        ${ibtn('paddingInd', 'btn-pad-ind', { title: '独立设置' })}
-      </div>
-      <label class="cbrow mt6">
-        <input type="checkbox" id="al-clip" ${clip ? 'checked' : ''} />
-        <span class="cblabel">裁剪内容</span>
-      </label>` : ''}
+      ${isFlex ? buildFlexBody(computed, isRow, isCol, isRowWrap, isGrid) : ''}
     </div>`
 }
 
@@ -221,17 +238,17 @@ export function renderAppearanceSection(computed: CSSStyleDeclaration): string {
         </div>
       </div>
       <div class="row">
-        ${field(ico('opacity'), numInput('ap-opacity', opacity, '0', '1'), '%')}
+        ${field(ico('opacity'), numInput('ap-opacity', opacity, '0', '1', '不透明度'), '%')}
         <span style="width:8px;flex-shrink:0"></span>
-        ${field(ico('cornerAll'), numInput('ap-radius', allSame ? tl : tl, '0'))}
+        ${field(ico('cornerAll'), numInput('ap-radius', allSame ? tl : tl, '0', '1', '圆角'))}
         ${ibtn('cornerInd', 'btn-corner-ind', { title: '独立圆角' })}
       </div>
       ${!allSame ? `
       <div class="row mt4">
-        ${field('TL', numInput('ap-tl', tl, '0'))}
-        ${field('TR', numInput('ap-tr', tr, '0'))}
-        ${field('BR', numInput('ap-br', br, '0'))}
-        ${field('BL', numInput('ap-bl', bl, '0'))}
+        ${field('TL', numInput('ap-tl', tl, '0', '1', '左上圆角'))}
+        ${field('TR', numInput('ap-tr', tr, '0', '1', '右上圆角'))}
+        ${field('BR', numInput('ap-br', br, '0', '1', '右下圆角'))}
+        ${field('BL', numInput('ap-bl', bl, '0', '1', '左下圆角'))}
       </div>` : ''}
     </div>`
 }
@@ -274,7 +291,7 @@ export function renderStrokeSection(computed: CSSStyleDeclaration): string {
       ${hasB ? `
       ${colorSwatchField('stroke', bc)}
       <div class="row mt4">
-        ${field('W', numInput('stroke-w', bw, '0'))}
+        ${field('W', numInput('stroke-w', bw, '0', '1', '描边宽度'))}
         <select class="msel" id="stroke-style" style="width:70px">
           ${[['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线']].map(([s, label]) =>
             `<option value="${s}" ${bs === s ? 'selected' : ''}>${label}</option>`
@@ -293,10 +310,11 @@ export function renderTextSection(computed: CSSStyleDeclaration, el: Element, fo
   const lh  = pxVal(computed.lineHeight)
   const ls  = pxVal(computed.letterSpacing)
 
-  const taButtons = (['left', 'center', 'right', 'justify'] as const).map((a) => {
-    const label = a === 'left' ? '≡' : a === 'center' ? '☰' : a === 'right' ? '≡' : '≣'
-    return `<button class="sbtn${ta === a ? ' active' : ''}" data-ta="${a}" style="width:22px">${label}</button>`
-  }).join('')
+  const TA_LABELS: Record<string, string> = { left: '左对齐', center: '居中', right: '右对齐', justify: '两端对齐' }
+  const TA_ICONS: Record<string, string> = { left: '≡', center: '☰', right: '≡', justify: '≣' }
+  const taButtons = (['left', 'center', 'right', 'justify'] as const).map((a) =>
+    `<button class="sbtn${ta === a ? ' active' : ''}" data-ta="${a}" style="width:22px" title="${TA_LABELS[a]}" aria-label="${TA_LABELS[a]}">${TA_ICONS[a]}</button>`
+  ).join('')
 
   return `
     <div class="section">
@@ -305,7 +323,7 @@ export function renderTextSection(computed: CSSStyleDeclaration, el: Element, fo
         <select class="fsel" id="txt-font">${fontOptions}</select>
       </div>
       <div class="row mt4">
-        ${field('大小', numInput('txt-size', pxVal(computed.fontSize), '1'))}
+        ${field('大小', numInput('txt-size', pxVal(computed.fontSize), '1', '1', '字号'))}
         <select class="msel" id="txt-weight" style="width:70px">
           ${[100, 200, 300, 400, 500, 600, 700, 800, 900].map((w) =>
             `<option value="${w}" ${parseInt(computed.fontWeight) === w ? 'selected' : ''}>${w}</option>`
@@ -313,8 +331,8 @@ export function renderTextSection(computed: CSSStyleDeclaration, el: Element, fo
         </select>
       </div>
       <div class="row mt4">
-        ${field('行高', numInput('txt-lh', lh, '0', '0.1'))}
-        ${field('间距', numInput('txt-ls', ls, '', '0.1'))}
+        ${field('行高', numInput('txt-lh', lh, '0', '0.1', '行高'))}
+        ${field('间距', numInput('txt-ls', ls, '', '0.1', '字间距'))}
       </div>
       <div class="row mt4">
         <div class="cswatch">

@@ -75,9 +75,16 @@ class DesignQueue extends EventEmitter {
     return request
   }
 
+  // dequeue only returns 'suggest' requests — 'develop' requests are claimed
+  // immediately in-band by the WS handler to prevent /api/next poller from
+  // racing against the claude subprocess auto-execute path.
   async dequeue(timeoutMs = 30_000): Promise<DesignRequest | null> {
-    if (this.pending.length > 0) {
-      return this.claim(this.pending.shift()!)
+    const suggestIdx = this.pending.findIndex(
+      (id) => this.requestsById.get(id)?.action === 'suggest',
+    )
+    if (suggestIdx !== -1) {
+      const [id] = this.pending.splice(suggestIdx, 1)
+      return this.claim(id)
     }
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -85,16 +92,20 @@ class DesignQueue extends EventEmitter {
         resolve(null)
       }, timeoutMs)
 
-      const onEnqueue = () => {
+      const onEnqueue = (req: DesignRequest) => {
+        if (req.action !== 'suggest') return
         clearTimeout(timer)
-        if (this.pending.length > 0) {
-          resolve(this.claim(this.pending.shift()!))
+        this.removeListener('enqueue', onEnqueue)
+        const idx = this.pending.indexOf(req.id)
+        if (idx !== -1) {
+          this.pending.splice(idx, 1)
+          resolve(this.claim(req.id))
         } else {
           resolve(null)
         }
       }
 
-      this.once('enqueue', onEnqueue)
+      this.on('enqueue', onEnqueue)
     })
   }
 

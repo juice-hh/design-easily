@@ -27,7 +27,7 @@ describe('queue — enqueue', () => {
 describe('queue — dequeue', () => {
   it('returns and claims a pending request immediately', async () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    const enqueued = queue.enqueue(element, 'change color')
+    const enqueued = queue.enqueue(element, 'change color', 'suggest')
     const claimed = await queue.dequeue(1000)
     expect(claimed?.id).toBe(enqueued.id)
     expect(claimed?.status).toBe('claimed')
@@ -42,7 +42,7 @@ describe('queue — dequeue', () => {
   it('resolves as soon as an item is enqueued while waiting', async () => {
     const element = { tag: 'span', id: '', classList: [], textContent: '', computedStyles: {} }
     const dequeuePromise = queue.dequeue(5000)
-    queue.enqueue(element, 'add padding')
+    queue.enqueue(element, 'add padding', 'suggest')
     const result = await dequeuePromise
     expect(result).not.toBeNull()
     expect(result?.status).toBe('claimed')
@@ -52,7 +52,7 @@ describe('queue — dequeue', () => {
 describe('queue — complete', () => {
   it('marks claimed request as completed and stores result', async () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    queue.enqueue(element, 'fix layout')
+    queue.enqueue(element, 'fix layout', 'suggest')
     await queue.dequeue(1000)
     const req = queue.getAll()[0]!
     const changed = queue.complete(req.id, {
@@ -80,7 +80,7 @@ describe('queue — complete', () => {
 
   it('marks claimed request as failed and stores error', async () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    queue.enqueue(element, 'fix it')
+    queue.enqueue(element, 'fix it', 'suggest')
     await queue.dequeue(1000)
     const req = queue.getAll()[0]!
     queue.complete(req.id, { status: 'failed', error: 'file not found' })
@@ -92,7 +92,7 @@ describe('queue — complete', () => {
 describe('queue — override rules', () => {
   async function makeFailedRequest(): Promise<string> {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    queue.enqueue(element, 'test')
+    queue.enqueue(element, 'test', 'suggest')
     const req = await queue.dequeue(1000)
     // Intentionally mutate via reference to simulate auto-timeout (cleanupStale sets
     // status directly on the stored object). This tests that complete() can override
@@ -123,7 +123,7 @@ describe('queue — override rules', () => {
 
   it('rejects completed → failed (terminal)', async () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    queue.enqueue(element, 'x')
+    queue.enqueue(element, 'x', 'suggest')
     await queue.dequeue(1000)
     const req = queue.getAll()[0]!
     queue.complete(req.id, { status: 'completed', summary: 'done', changedFiles: [] })
@@ -134,7 +134,7 @@ describe('queue — override rules', () => {
 
   it('is idempotent for completed → completed', async () => {
     const element = { tag: 'div', id: '', classList: [], textContent: '', computedStyles: {} }
-    queue.enqueue(element, 'x')
+    queue.enqueue(element, 'x', 'suggest')
     await queue.dequeue(1000)
     const req = queue.getAll()[0]!
     queue.complete(req.id, { status: 'completed', summary: 'v1', changedFiles: [] })

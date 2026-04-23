@@ -16,12 +16,13 @@ let cachedFonts: string[] | null = null
 export async function getLocalFonts(): Promise<string[]> {
   if (cachedFonts) return cachedFonts
 
-  // Local Font Access API
+  // Local Font Access API (Chrome 103+, not yet in TypeScript lib)
   if ('queryLocalFonts' in window) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fonts: any[] = await (window as any).queryLocalFonts()
-      const families = [...new Set<string>(fonts.map((f) => f.family as string))].sort()
+      type LocalFont = { family: string; fullName: string; postscriptName: string; style: string }
+      type QueryLocalFonts = () => Promise<LocalFont[]>
+      const fonts = await (window.queryLocalFonts as QueryLocalFonts)()
+      const families = [...new Set<string>(fonts.map((f) => f.family))].sort()
       cachedFonts = families
       return families
     } catch {
