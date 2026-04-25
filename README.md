@@ -74,23 +74,20 @@ npm run build
 
 ## 环境变量
 
-在 `server/` 目录下创建 `.env` 文件：
+核心功能（元素检查、发送修改请求给 Claude）**不需要配置 API Key**，直接调用本地已安装的 Claude Code CLI。
+
+如有需要，可在 `server/` 目录下创建 `.env` 文件覆盖默认值：
 
 ```env
-# AI 提供方（必填其一）
-ANTHROPIC_API_KEY=sk-ant-...        # 使用 Claude（默认）
-OPENAI_API_KEY=sk-...               # 使用 OpenAI
-
 # 可选配置
-AI_PROVIDER=claude                  # claude 或 openai（默认 claude）
-DEFAULT_MODEL=claude-sonnet-4-6     # Claude 模型名
-OPENAI_DEFAULT_MODEL=gpt-4o        # OpenAI 模型名
 PORT=3771                           # 服务端口（默认 3771）
 WORKSPACE_PATH=/path/to/your/app   # 目标项目根路径（元素无源文件时使用）
 EXTENSION_ID=your_extension_id     # 生产环境锁定扩展 ID（开发时不需要）
+CLAUDE_BIN=claude                   # Claude CLI 路径（默认 claude）
+CLAUDE_MODEL=claude-sonnet-4-6     # 使用的 Claude 模型
+CLAUDE_TIMEOUT_MS=300000           # Claude 超时时间（默认 5 分钟）
+CLAUDE_ALLOW_BASH=true             # 允许 Claude 使用 Bash 工具（默认关闭）
 ```
-
-> 获取 Anthropic API Key：[console.anthropic.com](https://console.anthropic.com)
 
 ## 安装 Chrome 扩展
 
