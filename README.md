@@ -13,10 +13,7 @@ npm install
 # 2. 构建
 npm run build
 
-# 3. 配置环境变量（在 server/ 目录下新建 .env）
-ANTHROPIC_API_KEY=your_api_key_here
-
-# 4. 配置 MCP
+# 3. 配置 MCP
 cp .claude/settings.local.example.json .claude/settings.local.json
 # 编辑 settings.local.json，填入项目绝对路径
 
