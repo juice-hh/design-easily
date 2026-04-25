@@ -17,10 +17,10 @@ npm run build
 cp .claude/settings.local.example.json .claude/settings.local.json
 # 编辑 settings.local.json，填入项目绝对路径
 
-# 5. 启动服务器
+# 4. 启动服务器
 npm run dev:server
 
-# 6. 在 Chrome 中加载扩展（见下方说明）
+# 5. 在 Chrome 中加载扩展（见下方说明）
 ```
 
 ## 功能模式
