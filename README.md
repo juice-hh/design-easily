@@ -2,6 +2,30 @@
 
 一个浏览器插件 + 本地服务器组成的设计辅助工具，让开发者在浏览器里直接检查、评论、编辑 UI 元素，并通过 WebSocket 驱动 Claude Code 对源文件进行修改。
 
+## 快速开始
+
+```bash
+# 1. 克隆并安装依赖
+git clone https://github.com/juice-hh/design-easily.git
+cd design-easily
+npm install
+
+# 2. 构建
+npm run build
+
+# 3. 配置环境变量（在 server/ 目录下新建 .env）
+ANTHROPIC_API_KEY=your_api_key_here
+
+# 4. 配置 MCP
+cp .claude/settings.local.example.json .claude/settings.local.json
+# 编辑 settings.local.json，填入项目绝对路径
+
+# 5. 启动服务器
+npm run dev:server
+
+# 6. 在 Chrome 中加载扩展（见下方说明）
+```
+
 ## 功能模式
 
 | 模式 | 快捷键 | 说明 |
@@ -38,22 +62,55 @@
 ## 环境要求
 
 - Node.js 18+
-- 支持 MCP 的 Claude Code
+- Claude Code（需支持 MCP）
 - Chrome / Edge 浏览器
 
 ## 安装
 
 ```bash
-# 安装服务端依赖
-npm install --workspace=server
-
-# 构建服务端
-npm run build --workspace=server
+npm install
+npm run build
 ```
 
-## 配置
+## 环境变量
 
-复制 MCP 配置模板并填写你的项目路径：
+在 `server/` 目录下创建 `.env` 文件：
+
+```env
+# AI 提供方（必填其一）
+ANTHROPIC_API_KEY=sk-ant-...        # 使用 Claude（默认）
+OPENAI_API_KEY=sk-...               # 使用 OpenAI
+
+# 可选配置
+AI_PROVIDER=claude                  # claude 或 openai（默认 claude）
+DEFAULT_MODEL=claude-sonnet-4-6     # Claude 模型名
+OPENAI_DEFAULT_MODEL=gpt-4o        # OpenAI 模型名
+PORT=3771                           # 服务端口（默认 3771）
+WORKSPACE_PATH=/path/to/your/app   # 目标项目根路径（元素无源文件时使用）
+EXTENSION_ID=your_extension_id     # 生产环境锁定扩展 ID（开发时不需要）
+```
+
+> 获取 Anthropic API Key：[console.anthropic.com](https://console.anthropic.com)
+
+## 安装 Chrome 扩展
+
+1. 在终端运行：
+   ```bash
+   npm run build
+   ```
+
+2. 打开 Chrome，地址栏输入：
+   ```
+   chrome://extensions
+   ```
+
+3. 开启右上角 **开发者模式**
+
+4. 点击 **加载已解压的扩展程序**，选择项目中的 `extension/dist/` 目录
+
+5. 扩展图标出现在工具栏后即安装成功
+
+## MCP 配置
 
 ```bash
 cp .claude/settings.local.example.json .claude/settings.local.json
@@ -76,15 +133,31 @@ cp .claude/settings.local.example.json .claude/settings.local.json
 ## 启动
 
 ```bash
-# 启动 HTTP/WebSocket 服务器（开发模式）
-npm run dev --workspace=server
+# 同时启动服务器和扩展构建监听（开发模式）
+npm run dev
 
-# 启动 HTTP/WebSocket 服务器（生产模式）
+# 仅启动服务器
+npm run dev:server
+
+# 生产模式
 npm run start --workspace=server
-
-# 启动 MCP 服务器（Claude Code 通过 settings.local.json 自动接入）
-npm run start:mcp --workspace=server
 ```
+
+## 常见问题
+
+**扩展连接不上服务器？**
+- 确认服务器已启动（`npm run dev:server`）
+- 确认端口 `3771` 未被占用
+- 检查 Chrome 控制台是否有 WebSocket 错误
+
+**Claude 收不到请求？**
+- 确认 `.claude/settings.local.json` 中的 `cwd` 路径正确
+- 重启 Claude Code 让 MCP 配置生效
+- 在 Claude Code 中运行 `/mcp` 确认 `design-easily` 已连接
+
+**元素找不到源文件？**
+- 确认目标项目使用 React 开发构建（需要 fiber 信息）
+- 或设置 `WORKSPACE_PATH` 环境变量指向目标项目根路径
 
 ## MCP 工具
 
@@ -122,28 +195,12 @@ complete_design_request({
 | `/api/complete/:id` | POST | 上报完成或失败结果 |
 | `/api/requests/:id` | GET | 按 ID 查询请求状态 |
 
-## 请求生命周期
-
-```
-pending（待处理）→ claimed（已认领）→ completed（已完成）
-                              ↘ failed（已失败）
-```
-
-- 请求超过 **5 分钟** 未被认领或处理将自动过期
-- `completed` 为终态，不可覆盖
-- 过期清理每 **1 分钟** 执行一次
-
 ## 开发与测试
 
 ```bash
-# 运行单元测试
-npx vitest run tests/unit/
-
-# 运行 API 集成测试（需先启动服务器）
-npx vitest run tests/api/
-
-# 运行全部测试
-npx vitest run
+npx vitest run tests/unit/    # 单元测试
+npx vitest run tests/api/     # API 集成测试（需先启动服务器）
+npx vitest run                # 全部测试
 ```
 
 ## 项目结构
