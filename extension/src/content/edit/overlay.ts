@@ -33,6 +33,10 @@ const OVERLAY_STYLES = `
   #de-edit-overlay .de-handle-tr { top: -5px; right: -5px; cursor: nesw-resize; }
   #de-edit-overlay .de-handle-bl { bottom: -5px; left: -5px; cursor: nesw-resize; }
   #de-edit-overlay .de-handle-br { bottom: -5px; right: -5px; cursor: nwse-resize; }
+  #de-edit-overlay .de-handle-t { top: -5px; left: 50%; margin-left: -3.5px; cursor: ns-resize; }
+  #de-edit-overlay .de-handle-b { bottom: -5px; left: 50%; margin-left: -3.5px; cursor: ns-resize; }
+  #de-edit-overlay .de-handle-l { top: 50%; left: -5px; margin-top: -3.5px; cursor: ew-resize; }
+  #de-edit-overlay .de-handle-r { top: 50%; right: -5px; margin-top: -3.5px; cursor: ew-resize; }
   #de-edit-overlay .de-drag-handle {
     position: absolute;
     top: -22px;
@@ -99,6 +103,10 @@ export function getOrCreateOverlay(): HTMLElement {
       <div class="de-handle de-handle-tr"></div>
       <div class="de-handle de-handle-bl"></div>
       <div class="de-handle de-handle-br"></div>
+      <div class="de-handle de-handle-t"></div>
+      <div class="de-handle de-handle-b"></div>
+      <div class="de-handle de-handle-l"></div>
+      <div class="de-handle de-handle-r"></div>
       <div class="de-drag-handle">⠿ 拖动</div>
       <div class="de-label"></div>
       <div class="de-component-label"></div>

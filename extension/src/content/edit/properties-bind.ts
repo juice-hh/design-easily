@@ -67,6 +67,11 @@ export function bindPositionEvents(sh: ShadowRoot, el: HTMLElement, apply: Apply
   })
 }
 
+export function bindSizeEvents(sh: ShadowRoot, apply: ApplyFn): void {
+  bindNum(sh, apply, 'size-w', 'width')
+  bindNum(sh, apply, 'size-h', 'height')
+}
+
 export function bindResizeEvents(sh: ShadowRoot, apply: ApplyFn): void {
   const applyResize = (axis: 'w' | 'h'): void => {
     const numEl  = sh.getElementById(`resize-${axis}`) as HTMLInputElement | null

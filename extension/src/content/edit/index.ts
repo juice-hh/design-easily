@@ -10,6 +10,14 @@ import {
 } from './overlay.js'
 import { PropertiesPanel, type StyleEdit } from './properties.js'
 import { makeResizable } from './resize.js'
+import {
+  collectSnapTargets,
+  snapDelta,
+  renderSnapGuides,
+  clearSnapGuides,
+  type SnapEdge,
+  type SnapTarget,
+} from './snap.js'
 import { buildUniqueSelector } from './selector.js'
 import { captureElementInfo } from './element-info.js'
 import { extractFiberInfo } from '../fiber.js'
@@ -54,18 +62,26 @@ function applyStyleToElement(el: Element, edit: StyleEdit): void {
 
 // ─── Drag to reposition ───────────────────────────────────────────────────────
 
+const DRAG_MOVE_THRESHOLD = 3
+
 function makeDraggable(dragHandle: Element, target: Element): () => void {
   let startX = 0
   let startY = 0
   let startTop = 0
   let startLeft = 0
   let dragging = false
+  let moved = false
+  let startRect: DOMRect | null = null
+  let snapCandidates: readonly SnapTarget[] = []
+  const DRAG_EDGES: readonly SnapEdge[] = ['left', 'right', 'top', 'bottom', 'centerX', 'centerY']
 
   const onMouseDown = (e: Event): void => {
     const me = e as MouseEvent
+    if (me.button !== 0) return
     me.preventDefault()
     me.stopPropagation()
     dragging = true
+    moved = false
 
     const computed = globalThis.getComputedStyle(target as HTMLElement)
     startX = me.clientX
@@ -78,16 +94,28 @@ function makeDraggable(dragHandle: Element, target: Element): () => void {
       ;(target as HTMLElement).style.position = 'relative'
     }
 
+    startRect = target.getBoundingClientRect()
+    snapCandidates = collectSnapTargets(target)
+
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
   }
 
   const onMouseMove = (e: MouseEvent): void => {
-    if (!dragging) return
+    if (!dragging || !startRect) return
     const dx = e.clientX - startX
     const dy = e.clientY - startY
-    ;(target as HTMLElement).style.top = `${startTop + dy}px`
-    ;(target as HTMLElement).style.left = `${startLeft + dx}px`
+    if (!moved && Math.abs(dx) + Math.abs(dy) < DRAG_MOVE_THRESHOLD) return
+    moved = true
+
+    const disabled = e.metaKey || e.ctrlKey
+    const { dx: sdx, dy: sdy, hits } = disabled
+      ? { dx, dy, hits: [] as const }
+      : snapDelta(startRect, dx, dy, DRAG_EDGES, snapCandidates)
+
+    ;(target as HTMLElement).style.top = `${startTop + sdy}px`
+    ;(target as HTMLElement).style.left = `${startLeft + sdx}px`
+    renderSnapGuides(hits)
     // Reposition overlay
     const overlay = getOrCreateOverlay()
     positionOverlay(overlay, target)
@@ -96,8 +124,18 @@ function makeDraggable(dragHandle: Element, target: Element): () => void {
   const onMouseUp = (): void => {
     if (!dragging) return
     dragging = false
+    clearSnapGuides()
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
+
+    // Suppress the click that follows a real drag, so the element doesn't get reselected.
+    if (moved) {
+      const suppress = (ev: Event): void => {
+        ev.stopPropagation()
+        ev.preventDefault()
+      }
+      document.addEventListener('click', suppress, { capture: true, once: true })
+    }
 
     const htmlTarget = target as HTMLElement
     const endTop = Number.parseFloat(htmlTarget.style.top) || 0
@@ -283,10 +321,13 @@ export class EditMode {
     const fiber = extractFiberInfo(target)
     positionOverlay(overlay, target, fiber.componentName ?? undefined)
 
-    // Wire drag handle
+    // Wire drag — both the overlay handle and the element body trigger drag.
     const dragHandle = overlay.querySelector('.de-drag-handle')
-    if (dragHandle) {
-      this.dragCleanup = makeDraggable(dragHandle, target)
+    const cleanups: Array<() => void> = []
+    if (dragHandle) cleanups.push(makeDraggable(dragHandle, target))
+    cleanups.push(makeDraggable(target, target))
+    this.dragCleanup = (): void => {
+      for (const fn of cleanups) fn()
     }
 
     // Wire resize handles

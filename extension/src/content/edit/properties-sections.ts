@@ -58,6 +58,17 @@ export function renderRulerToggle(rulerOn: boolean): string {
     </div>`
 }
 
+export function renderSizeSection(computed: CSSStyleDeclaration): string {
+  return `
+    <div class="section">
+      <div class="sec-hd"><span class="sec-title">尺寸</span></div>
+      <div class="row mt4">
+        ${field('W', numInput('size-w', pxVal(computed.width), '1', '1', '宽度'), 'px')}
+        ${field('H', numInput('size-h', pxVal(computed.height), '1', '1', '高度'), 'px')}
+      </div>
+    </div>`
+}
+
 export function renderPositionSection(computed: CSSStyleDeclaration): string {
   const posType = computed.position
   const isAbsOrFixed = posType === 'absolute' || posType === 'fixed'

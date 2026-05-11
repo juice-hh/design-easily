@@ -12,6 +12,7 @@ import { PANEL_STYLES } from './properties-styles.js'
 import { makePanelDraggable } from '../draggable.js'
 import { ACCENT, ACCENT_RGB } from '../tokens.js'
 import {
+  renderSizeSection,
   renderPositionSection,
   renderAutoLayoutSection,
   renderAppearanceSection,
@@ -20,6 +21,7 @@ import {
   renderTextSection,
 } from './properties-sections.js'
 import {
+  bindSizeEvents,
   bindPositionEvents,
   bindAutoLayoutEvents,
   bindAppearanceEvents,
@@ -144,6 +146,7 @@ export class PropertiesPanel {
           <button class="mode-tab${this.activeTab === 'code' ? ' active' : ''}" data-tab="code">代码</button>
         </div>
         <div id="tab-style" style="${this.activeTab !== 'style' ? 'display:none' : ''}">
+          ${renderSizeSection(computed)}
           ${renderPositionSection(computed)}
           ${renderAutoLayoutSection(computed)}
           ${renderAppearanceSection(computed)}
@@ -335,6 +338,7 @@ export class PropertiesPanel {
     const apply = this.apply.bind(this)
     const render = this.render.bind(this)
 
+    bindSizeEvents(sh, apply)
     bindPositionEvents(sh, el, apply, render)
     bindAutoLayoutEvents(sh, el, apply, render)
     bindAppearanceEvents(sh, el, apply, render)
