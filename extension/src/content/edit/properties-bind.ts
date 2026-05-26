@@ -19,19 +19,31 @@ export function bindNum(sh: ShadowRoot, apply: ApplyFn, id: string, prop: string
 export function bindColorPair(sh: ShadowRoot, apply: ApplyFn, prefix: string, cssProp: string): void {
   const picker = sh.getElementById(`${prefix}-picker`) as HTMLInputElement | null
   const hexIn  = sh.getElementById(`${prefix}-hex`) as HTMLInputElement | null
+  const alphaIn = sh.getElementById(`${prefix}-alpha`) as HTMLInputElement | null
 
-  const applyHex = (hex: string): void => {
+  const toRgba = (hex: string, alphaPct: number): string => {
+    const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex)
+    if (!m) return hex
+    const a = Math.max(0, Math.min(100, alphaPct)) / 100
+    return `rgba(${Number.parseInt(m[1], 16)},${Number.parseInt(m[2], 16)},${Number.parseInt(m[3], 16)},${a})`
+  }
+
+  const applyAll = (hex: string, alphaPct: number): void => {
     if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return
     const bg = sh.querySelector<HTMLDivElement>(`#${prefix}-picker`)
       ?.closest('.cswatch')?.querySelector<HTMLDivElement>('.cswatch-bg')
+    const rgba = toRgba(hex, alphaPct)
     if (picker) picker.value = hex
     if (hexIn)  hexIn.value = hex.replace('#', '').toUpperCase()
-    if (bg)     bg.style.background = hex
-    apply(cssProp, hex)
+    if (bg)     bg.style.background = rgba
+    apply(cssProp, alphaPct >= 100 ? hex : rgba)
   }
 
-  picker?.addEventListener('input', () => applyHex(picker.value))
-  hexIn?.addEventListener('change', () => applyHex('#' + hexIn.value))
+  const currentAlpha = (): number => Number.parseFloat(alphaIn?.value ?? '100') || 100
+
+  picker?.addEventListener('input', () => applyAll(picker.value, currentAlpha()))
+  hexIn?.addEventListener('change', () => applyAll('#' + hexIn.value, currentAlpha()))
+  alphaIn?.addEventListener('change', () => applyAll('#' + (hexIn?.value ?? '000000'), currentAlpha()))
 }
 
 export function bindPositionEvents(sh: ShadowRoot, el: HTMLElement, apply: ApplyFn, render: RenderFn): void {

@@ -43,6 +43,14 @@ export function rgbToHex(rgb: string): string {
   return '#' + m.slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join('')
 }
 
+export function rgbAlphaPct(rgb: string): string {
+  const m = /rgba?\(([^)]+)\)/.exec(rgb)
+  if (!m) return '100'
+  const parts = m[1].split(',').map((s) => s.trim())
+  if (parts.length < 4) return '100'
+  return String(Math.round(Number.parseFloat(parts[3]) * 100))
+}
+
 // ── Section builders ─────────────────────────────────────────
 
 export function renderRulerToggle(rulerOn: boolean): string {
@@ -264,19 +272,26 @@ export function renderAppearanceSection(computed: CSSStyleDeclaration): string {
     </div>`
 }
 
-function colorSwatchField(prefix: string, hex: string): string {
+function colorSwatchField(prefix: string, hex: string, alphaPct = '100'): string {
+  const a = Number.parseFloat(alphaPct) / 100
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
+  const rgba = m
+    ? `rgba(${Number.parseInt(m[1], 16)},${Number.parseInt(m[2], 16)},${Number.parseInt(m[3], 16)},${a})`
+    : hex
   return `
     <div class="row">
-      <div class="cswatch">
-        <div class="cswatch-bg" style="background:${hex}"></div>
+      <div class="cswatch cswatch-checker">
+        <div class="cswatch-bg" style="background:${rgba}"></div>
         <input type="color" id="${prefix}-picker" value="${hex}" />
       </div>
       ${field('', `<input type="text" id="${prefix}-hex" value="${hex.replace('#', '')}" maxlength="6" style="text-align:left;text-transform:uppercase;font-family:monospace" />`)}
+      ${field('', `<input type="number" id="${prefix}-alpha" value="${alphaPct}" min="0" max="100" step="1" aria-label="不透明度" style="text-align:left" />`, '%')}
     </div>`
 }
 
 export function renderFillSection(computed: CSSStyleDeclaration): string {
   const bg = rgbToHex(computed.backgroundColor)
+  const alpha = rgbAlphaPct(computed.backgroundColor)
   const hasBg = computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent'
   return `
     <div class="section">
@@ -284,12 +299,13 @@ export function renderFillSection(computed: CSSStyleDeclaration): string {
         <span class="sec-title">填充</span>
         ${ibtn('plus', 'fill-add', { title: '添加填充' })}
       </div>
-      ${hasBg ? colorSwatchField('fill', bg) : `<span style="font-size:10px;color:#8c8c8c">无填充</span>`}
+      ${hasBg ? colorSwatchField('fill', bg, alpha) : `<span style="font-size:10px;color:#8c8c8c">无填充</span>`}
     </div>`
 }
 
 export function renderStrokeSection(computed: CSSStyleDeclaration): string {
   const bc  = rgbToHex(computed.borderColor || '#000000')
+  const ba  = rgbAlphaPct(computed.borderColor || '')
   const bw  = pxVal(computed.borderWidth)
   const bs  = computed.borderStyle || 'none'
   const hasB = bs !== 'none' && bw !== '0'
@@ -300,7 +316,7 @@ export function renderStrokeSection(computed: CSSStyleDeclaration): string {
         ${ibtn('plus', 'stroke-add', { title: '添加描边' })}
       </div>
       ${hasB ? `
-      ${colorSwatchField('stroke', bc)}
+      ${colorSwatchField('stroke', bc, ba)}
       <div class="row mt4">
         ${field('W', numInput('stroke-w', bw, '0', '1', '描边宽度'))}
         <select class="msel" id="stroke-style" style="width:70px">

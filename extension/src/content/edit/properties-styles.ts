@@ -27,7 +27,9 @@ export const PANEL_STYLES = `
     max-height: calc(100vh - 80px);
     color: rgba(255,255,255,0.9);
     font-size: 11px;
+    scrollbar-width: none;
   }
+  .panel::-webkit-scrollbar { width: 0; height: 0; display: none; }
   .panel-header {
     padding: 10px 12px 8px;
     border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -152,6 +154,15 @@ export const PANEL_STYLES = `
   .cswatch input[type=color] {
     position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px);
     border: none; padding: 0; cursor: pointer; opacity: 0;
+  }
+  .cswatch-checker {
+    background-image:
+      linear-gradient(45deg, #888 25%, transparent 25%),
+      linear-gradient(-45deg, #888 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #888 75%),
+      linear-gradient(-45deg, transparent 75%, #888 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
   }
   .cswatch-bg { position: absolute; inset: 0; border-radius: 3px; }
   .cbrow { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
